@@ -57,7 +57,7 @@ Windows 11の新しいメモ帳の内部コントロールが対応クラスか�
 |---|---|
 | General / Enabled | 全体ON/OFF |
 | MinLength / MaxCandidates | 2～32文字 / 1～9件 |
-| FontSize / OffsetX / OffsetY | 表示サイズと96DPI基準のオフセット。既定32,80で既存IME表示の下側にずらす |
+| FontSize / OffsetX / OffsetY | FontSizeはポイント数（既定11pt）。オフセットは96DPI基準、既定32,80。キャレット側モニターのDPIでそれぞれ一度だけ換算 |
 | ShowTranslation / SCOWL / EJDict | 訳、各辞書ソースの有効化 |
 | Learning / PromotionCount | 自動学習、未知語昇格(2～100回) |
 | DebounceMs | 入力後の更新待ち(既定30ms) |
@@ -109,7 +109,9 @@ $ahk = "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe"
 | B: IME表示がIPCで配信 | プロセス分離とキャッシュ共有を両立 | 既存側への変更と世代/フォーカス/鮮度管理が必要。将来候補 |
 | C: 既存無変更・候補時に軽量取得 | 既存環境への影響が最小 | カスタム欄は停止。**今回採用**。Win32のみなのでUIA/IA2の重複探索は0回 |
 
-CaretProvider.GetPosition(context)はFound/X/Y/Method/Hwnd/Focus/Tick/Ageを返す。GUIThreadInfoの座標変換は既存コードの構造体配置と同じ方式。30msキャッシュをHWND+focusで分離し、不明時は古い座標を返さない。候補がない待機中には位置を取得しない。UIA/IA2は読み込まない。位置取得不能時のマウス位置への推測表示も行わない。DPI・モニター作業領域で位置を補正するが、実際の複数モニター・DPI混在は未検証。
+CaretProvider.GetPosition(context)はFound/X/Y/Method/Hwnd/Focus/Tick/Ageを返す。GUIThreadInfoのキャレット座標を、そのHWND自身のDPI認識方式で画面座標へ変換し、物理ピクセルへ正規化する。入力先移動時に古い位置を使わないよう毎回確認する。候補がない待機中には位置を取得しない。位置取得にUIA/IA2は使用せず、マウス位置へ推測表示しない。
+
+候補GUIはキャレットの物理点があるモニターを選び、入力先の主ウィンドウのDPIに依存せず対象モニターの実効DPIを取得する。計測と描画で同じフォントを使用し、DPIを二重換算しない。行高は日本語・太字を含む実測値＋余白、幅は内容に応じて180～520px相当（96DPI基準、作業領域が上限）。長い訳文は改行せず末尾を省略する。高さが足りない場合も選択行が見える範囲を表示する。
 
 ## 辞書の再生成
 

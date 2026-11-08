@@ -2,7 +2,8 @@ param(
     [string]$Ahk = "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe",
     [switch]$Integration,
     [switch]$CaseOnly,
-    [switch]$ImeIntegration
+    [switch]$ImeIntegration,
+    [switch]$Dpi
 )
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -44,3 +45,4 @@ if (Test-Path (Join-Path $root 'tests/sakura.ahk')) { Invoke-Ahk (Join-Path $roo
 if ($Integration) { Invoke-Ahk (Join-Path $root 'tests/integration.ahk') }
 elseif ($CaseOnly) { Invoke-Ahk -Script (Join-Path $root 'tests/integration.ahk') -ExtraArgs @('--case-only') }
 if ($ImeIntegration) { Invoke-Ahk (Join-Path $root 'tests/ime-integration.ahk') }
+if ($Dpi) { Invoke-Ahk (Join-Path $root 'tests/dpi.ahk') }
