@@ -1,0 +1,11 @@
+* text=auto eol=lf
+*.ahk text eol=lf
+*.py text eol=lf
+*.ps1 text eol=lf
+*.md text eol=lf
+*.ini text eol=lf
+*.json text eol=lf
+*.txt text eol=lf
+*.db -text
+*.zip -text
+licenses/* whitespace=-blank-at-eof

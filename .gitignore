@@ -1,0 +1,16 @@
+user/*
+!user/.gitkeep
+tools/sources/
+__pycache__/
+tests/results/
+dist/
+*.tmp
+*.log
+logs/
+*.zip
+*.db
+!data/dictionary.db
+*.db-journal
+*.db-wal
+*.db-shm
+docs/resident-metrics*.json
