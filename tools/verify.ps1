@@ -26,7 +26,7 @@ function Invoke-Ahk([string]$Script, [string[]]$ExtraArgs = @()) {
         Remove-Item -LiteralPath $out,$err -Force -ErrorAction SilentlyContinue
     }
 }
-foreach ($entry in @('EnglishAutocomplete.ahk','ManageDictionary.ahk')) {
+foreach ($entry in @('EnglishAutocomplete.ahk','ManageDictionary.ahk','tests/fixture.ahk')) {
     $wrapper = Join-Path $root '.syntax-check.ahk'
     try {
         $content = '#Requires AutoHotkey v2.0+' + "`n" + 'SetTimer(() => ExitApp(0), -100)' + "`n" + '#Include "' + (Join-Path $root $entry) + '"'
