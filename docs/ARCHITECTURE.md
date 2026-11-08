@@ -47,3 +47,17 @@ freshness: version-sensitive
 ## 再検証する条件
 
 UIA/TSF/IA2や新しいフィールドプロバイダーの追加、既存表示との統合/IPC導入、AHK・Windows更新、対象アプリ拡大。現在の制限を外す際は入力欄の安全性と実テキスト照合を位置取得とは独立に検証する。
+
+## サクラエディタ本文プロバイダー (2026-11-08追加)
+
+冒頭の通常欄限定の判断を拡張し、`SakuraView182`だけを専用方式で扱う。UIA/MSAAに本文・選択が公開されず、標準Editメッセージも使えないため、単に許可クラスを増やす方式は採らない。
+
+公式リビジョン[`119485ac9c4ce13989c27b570a3b835f49f5e1b9`](https://github.com/sakura-editor/sakura/tree/119485ac9c4ce13989c27b570a3b835f49f5e1b9)の共有データ版182に固定する。正規プロセス名と親クラス`TextEditorWindow[ M64 ]WP182`を検証し、共有領域の版とproduct versionが対象実行ファイルの版に一致することを必須とする。
+
+- `MYWM_GETFILEINFO=WM_APP+203`で論理カーソル、`MYWM_GETLINECOUNT=WM_APP+226`で行数、`MYWM_GETLINEDATA=WM_APP+208`で行内オフセット以降を照会する。`DLLSHAREDATA`の先頭16バイト直後にWCHAR[32000]、その後に`EditInfo`があり、`EditInfo::m_ptCursor`のオフセットは556。読み取り先は64572/64576。ハンドルやポインターを含まないこの先頭部分だけを扱う。[公式レイアウト](https://github.com/sakura-editor/sakura/blob/119485ac9c4ce13989c27b570a3b835f49f5e1b9/sakura_core/env/DLLSHAREDATA.h)、[EditInfo](https://github.com/sakura-editor/sakura/blob/119485ac9c4ce13989c27b570a3b835f49f5e1b9/sakura_core/basis/EditInfo.h)
+- `SakuraShareData[ M64 ]WP182`はFILE_MAP_READで開き、`MutexSakuraEditorShareWork[ M64 ]WP182`で排他する。アプリ側が共有ワーク領域へ返した結果を読む。こちらから領域への書込・他プロセスのメモリ書換えは行わない。受信文字列にNUL終端を仮定せず、返却長を制限して直前128文字と直後1文字だけを保持する。
+- 独立した非表示HMENUに`F_DELETE_LINE=30245`と`F_COPYLINES=30610`を初期enabledで作る。`WM_INITMENUPOPUP(0x117), fSystemMenu=TRUE`で対象の状態更新だけを要求し、「前者enabled・後者disabled」だけを許可する。未処理なら両方enabledのままなので拒否される。既存メニューや本文は変更しない。この判定はサクラのIsEditableとIsTextSelectedを反映する。[公式状態更新](https://github.com/sakura-editor/sakura/blob/119485ac9c4ce13989c27b570a3b835f49f5e1b9/sakura_core/window/CEditWnd.cpp)、[有効条件](https://github.com/sakura-editor/sakura/blob/119485ac9c4ce13989c27b570a3b835f49f5e1b9/sakura_core/func/Funccode.cpp)
+- タイムアウト後も対象が処理中の可能性があるため、元のSendMessageCallbackの完了でリソースを解放する。通常の待機上限は20ms。timeout時は結果を拒否し、完了まで共有mutex/メニューを保持して新規照会を止める。timeout引渡し直前の完了も回収し、対象スレッド終了時は監視で解放する。共有mutex待機も20ms、abandonedは拒否する。
+- 状態・カーソル・近傍を前後で照合し、候補確定前にも既存Snapshotから再照会する。空文書と正規のEOF空行を扱う。カーソル座標は既存Win32 CaretProviderを使用する。IME制限は緩和しない。
+
+このプロトコルはサクラの内部共有データ版に依存する。将来版は先頭レイアウトと状態照会の双方を確認してから追加する。32bit 2.4.3.7173のみ実機確認済み。source ZIPと照合用ヘッダーは`tools/sources/`、試験文書・結果は`tests/results/`に置き、Git/配布物へ含めない。

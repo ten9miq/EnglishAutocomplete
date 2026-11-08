@@ -1,6 +1,6 @@
 # EnglishAutocomplete (AutoHotkey v2)
 
-ローカル辞書とSQLite学習による英文単語補完。**通常のWin32 Edit/RichEdit欄向けの動作するMVP**であり、すべてのWindowsアプリに対応した完成版ではない。既存IMEインジケーターのソース・プロセス・設定は変更しない。
+ローカル辞書とSQLite学習による英文単語補完。**Win32 Edit/RichEditと共有データ版182のサクラ本文向けのMVP**であり、すべてのWindowsアプリに対応した完成版ではない。既存IMEインジケーターのソース・プロセス・設定は変更しない。
 
 専用リポジトリ: [ten9miq/EnglishAutocomplete](https://github.com/ten9miq/EnglishAutocomplete)。元のAutoHotkeyリポジトリから分離した独立プロジェクトで、外部のAHKライブラリを要求しない。cloneまたはZIP展開したこのディレクトリだけで利用できる。
 
@@ -20,7 +20,9 @@ ENGと日本語IMEを閉じた直接入力で動作する。**IME ONでは変換
 
 ENGの追加は不要。本体はキーボードレイアウトを追加・切替しない。自動試験の専用fixtureは一時的に英語US配列を読み込むが、終了時に元の配列へ戻し、そのfixtureが追加した配列だけを解除する。既に登録・読み込み済みの配列は削除しない。
 
-安全判定できるクラスは `Edit`、`RichEdit`、`RichEdit20A/W`、`RichEdit50A/W`、`RichEditD2DPT`。ES_PASSWORD/EM_GETPASSWORDCHAR、読み取り専用、選択範囲、32767文字を超える欄、タイムアウトは拒否する。カスタム入力欄への強制有効化設定はない。Scintilla、サクラ本文、Chromium/Electron、Chrome/Braveのフォーム、Excel本文・数式バー、VS Code、Google Docs/Sheets/Slidesは**現版の入力プロバイダーで対応していない**。単に実入力未検証という意味ではない。
+安全判定できるクラスは `Edit`、`RichEdit`、`RichEdit20A/W`、`RichEdit50A/W`、`RichEditD2DPT`。ES_PASSWORD/EM_GETPASSWORDCHAR、読み取り専用、選択範囲、32767文字を超える欄、タイムアウトは拒否する。カスタム入力欄への強制有効化設定はない。Scintilla、Chromium/Electron、Chrome/Braveのフォーム、Excel本文・数式バー、VS Code、Google Docs/Sheets/Slidesは**現版の入力プロバイダーで対応していない**。単に実入力未検証という意味ではない。
+
+**サクラエディタ本文は専用プロバイダーで対応**する。共有データ版182の`SakuraView182`と正規の`sakura.exe`/親クラス/共有領域/実行ファイル版の一致を必須とする。サクラ32bit 2.4.3.7173でIME OFFの半角英数による候補表示・確定を確認した。64bitは同版の形式を実装しているが実機未検証。未知の共有データ版は停止する。独立した非表示メニューへの状態照会で「選択なし・編集可能」を確認し、排他した共有領域を読み取り専用で参照して行近傍とカーソルを二度照合する。本文・クリップボード・マクロ設定には手を加えない。IME ONのままの半角英数は、従来どおり未確定入力を照会できなければ停止する。
 
 Windows 11の新しいメモ帳の内部コントロールが対応クラスかどうかは環境依存。専用のネイティブEdit試験窓では動作確認済みだが、インストールされているメモ帳アプリ自体は未検証。一般アプリを無条件に保証しない。
 
@@ -69,7 +71,7 @@ Windows 11の新しいメモ帳の内部コントロールが対応クラスか�
 | app:実行ファイル名 / Enabled, Learning, Keys | アプリ別の補完・学習・候補キーON/OFF |
 | app:実行ファイル名 / Tab, Enter | アプリ別のTab/Enter確定ON/OFF |
 
-メモ帳・Notepad++・サクラのプロファイルは許可しているが、**プロファイル許可はそのアプリの独自コントロールに対応したことを意味しない**。上記の安全判定を通るネイティブ欄だけが対象。Excel/VS Code/Chrome/Braveは初期設定で無効。新しいアプリを許可する際は、学習を先に無効のまま `docs/MANUAL_TESTS.md` を確認する。
+メモ帳・Notepad++・サクラのプロファイルは許可しているが、**プロファイル許可はそのアプリの独自コントロールに対応したことを意味しない**。上記の安全判定を通る通常欄と、対応版のサクラ本文だけが対象。Excel/VS Code/Chrome/Braveは初期設定で無効。新しいアプリを許可する際は、学習を先に無効のまま `docs/MANUAL_TESTS.md` を確認する。
 
 ## 個人辞書とデータ管理
 

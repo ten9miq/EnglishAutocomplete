@@ -31,6 +31,8 @@ class EacFieldGuard {
             return false
         try {
             cls := WinGetClass("ahk_id " context.Focus)
+            if cls = "SakuraView182"
+                return EacSakuraFieldProvider.Read(context)
             ; No Chromium renderer/Scintilla/document guessing or unsafe opt-in.
             if !RegExMatch(cls, "i)^(?:Edit|RichEdit(?:20[AW]|50[AW]|D2DPT)?)$")
                 return false

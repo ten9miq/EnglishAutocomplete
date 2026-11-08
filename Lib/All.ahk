@@ -2,6 +2,7 @@
 #Include SQLite.ahk
 #Include Config.ahk
 #Include FieldGuard.ahk
+#Include SakuraFieldProvider.ahk
 #Include ImeStateProvider.ahk
 #Include CaretProvider.ahk
 #Include UserDictionary.ahk
