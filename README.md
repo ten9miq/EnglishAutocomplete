@@ -1,13 +1,14 @@
 # EnglishAutocomplete (AutoHotkey v2)
 
-ローカル辞書とSQLite学習による英文単語補完。**Win32 Edit/RichEditと共有データ版182のサクラ本文向けのMVP**であり、すべてのWindowsアプリに対応した完成版ではない。既存IMEインジケーターのソース・プロセス・設定は変更しない。
+ローカル辞書とSQLite学習による英文単語補完。**Win32 Edit/RichEdit、共有データ版182のサクラ本文、UI Automationで安全な入力情報を取得できるChrome系・Codex等の入力欄に対応するMVP**。すべてのアプリやWebエディターへの対応を保証するものではない。既存IMEインジケーターのソース・プロセス・設定は変更しない。
 
 専用リポジトリ: [ten9miq/EnglishAutocomplete](https://github.com/ten9miq/EnglishAutocomplete)。元のAutoHotkeyリポジトリから分離した独立プロジェクトで、外部のAHKライブラリを要求しない。cloneまたはZIP展開したこのディレクトリだけで利用できる。
 
 ## 現時点でできること
 
-- 既定3文字から最大5件の候補。大小文字を無視した検索、入力済み大文字の保持、訳の表示切替。
+- 既定3文字から最大9件の候補。大小文字を無視した検索、入力済み大文字の保持、訳の表示切替。
 - 入力を奪わないNoActivate GUI。候補がある間だけ確定・候補移動・番号選択・Escを有効化。
+- キャレット側モニターのDPIで文字と行高を実測。長い訳文は単行の省略表示にし、候補全体をそのモニターの作業領域へ収める。
 - 入力欄の実テキスト、選択状態、フォーカス、IMEを確定前に照合。既存文字を消さず**残りの文字だけ**送信。クリップボードを使用しない。
 - SCOWL size 60 US + EJDict、113,438語。13,102フレーズは別テーブルへ分離して保存し、現版の候補には出さない。
 - SQLite個人辞書、使用回数・最終日時・手動登録・禁止・削除・頻度初期化。未知語は既定3回で昇格。
@@ -20,11 +21,17 @@ ENGと日本語IMEを閉じた直接入力で動作する。**IME ONでは変換
 
 ENGの追加は不要。本体はキーボードレイアウトを追加・切替しない。自動試験の専用fixtureは一時的に英語US配列を読み込むが、終了時に元の配列へ戻し、そのfixtureが追加した配列だけを解除する。既に登録・読み込み済みの配列は削除しない。
 
-安全判定できるクラスは `Edit`、`RichEdit`、`RichEdit20A/W`、`RichEdit50A/W`、`RichEditD2DPT`。ES_PASSWORD/EM_GETPASSWORDCHAR、読み取り専用、選択範囲、32767文字を超える欄、タイムアウトは拒否する。カスタム入力欄への強制有効化設定はない。Scintilla、Excel本文・数式バー、VS Code、Google Docs/Sheets/Slidesは**現版の入力プロバイダーで対応していない**。単に実入力未検証という意味ではない。
+候補キーの判定と確定直前にも本文・フォーカス・IMEを再照合し、表示後のモード変更や変換開始時には古い候補を確定しない。開いたIMEの未確定入力照会はライブラリ試験として残しているが、常駐本体はIME ONの候補を許可しない。
 
-**サクラエディタ本文は専用プロバイダーで対応**する。共有データ版182の`SakuraView182`と正規の`sakura.exe`/親クラス/共有領域/実行ファイル版の一致を必須とする。サクラ32bit 2.4.3.7173でIME OFFの半角英数による候補表示・確定を確認した。64bitは同版の形式を実装しているが実機未検証。未知の共有データ版は停止する。独立した非表示メニューへの状態照会で「選択なし・編集可能」を確認し、排他した共有領域を読み取り専用で参照して行近傍とカーソルを二度照合する。本文・クリップボード・マクロ設定には手を加えない。IME ONのままの半角英数は、従来どおり未確定入力を照会できなければ停止する。
+通常欄で安全判定できるクラスは `Edit`、`RichEdit`、`RichEdit20A/W`、`RichEdit50A/W`、`RichEditD2DPT`。ES_PASSWORD/EM_GETPASSWORDCHAR、読み取り専用、選択範囲、32767文字を超える欄、タイムアウトは拒否する。カスタム入力欄への強制有効化設定はない。Scintilla、Excel本文・数式バー、VS Code本文、Google Docs/Sheets/Slides等の独自文書コントロールは未対応。
 
 Chrome/Brave/Edge、Codex等のChromium/Electron入力欄にはUIA専用プロバイダーを使用する。**フォーカス中のEdit要素、パスワードでないこと、編集可能、単一の空選択、入力欄内の本文近傍、キャレット矩形、前面ウィンドウの祖先との一致を確認できた欄だけ**が対象。textareaやcontenteditableも同じ情報を公開すれば扱う。読み取りは直前128文字・直後1文字だけで、全文やValueの一括取得・SetValue・クリップボード操作は行わない。同じウィンドウ内の別欄への移動もruntime identityで区別し、確定前に再照会する。情報が不足する独自Webエディターや文書viewerは停止する。
+
+Chrome/Brave/EdgeとCodexのプロファイルを既定有効・自動学習OFFにしている。Codexデスクトップの`ChatGPT.exe`と`Codex.exe`の両プロセス名を用意する。IME ONはネイティブIMEへ任せる。2026-11-09、Codex実画面で9候補表示・候補選択・Enterでのconfi→confident確定（送信なし）を確認した。その後Spaceの候補操作は廃止し、現在はTab/↑↓で選択する。Chrome156では専用フォームのUIA公開属性を確認済み。
+
+rich fieldのDocumentRangeが実際のcaret端点と整合しない場合は、読む範囲がfocused Edit内に構造的に含まれることを検証する。EOFの追加確認で、そのEdit自身のValueだけを上限32767文字で一時参照することがある。ページ全文を読まず、Value全文をログや学習DBには保持しない。
+
+**サクラエディタ本文は専用プロバイダーで対応**する。共有データ版182の`SakuraView182`と正規の`sakura.exe`/親クラス/共有領域/実行ファイル版の一致を必須とする。サクラ32bit 2.4.3.7173でIME OFFの半角英数による候補表示・確定を確認した。64bitは同版の形式を実装しているが実機未検証。未知の共有データ版は停止する。独立した非表示メニューへの状態照会で「選択なし・編集可能」を確認し、排他した共有領域を読み取り専用で参照して行近傍とカーソルを二度照合する。本文・クリップボード・マクロ設定には手を加えない。IME ONのままの半角英数は、従来どおり未確定入力を照会できなければ停止する。
 
 Windows 11の新しいメモ帳の内部コントロールが対応クラスかどうかは環境依存。専用のネイティブEdit試験窓では動作確認済みだが、インストールされているメモ帳アプリ自体は未検証。一般アプリを無条件に保証しない。
 
@@ -33,7 +40,7 @@ Windows 11の新しいメモ帳の内部コントロールが対応クラスか�
 1. このフォルダをユーザーが書込み可能な場所に置く。
 2. AutoHotkey **v2 x64**を用意する。v1では動かない。
 3. `EnglishAutocomplete.ahk` を実行する。初回に `user/settings.ini` と `user/user.db` を作る。
-4. ENGまたはIME OFFの対応入力欄で `confi` などを入力する。
+4. ENG、IME OFF、または未確定入力を照会できるRichEdit等でIME ON・半角英数にし、`confi`などを入力する。
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe" '/restart' '.\EnglishAutocomplete.ahk'
@@ -42,12 +49,16 @@ Windows 11の新しいメモ帳の内部コントロールが対応クラスか�
 | 既定キー | 動作 |
 |---|---|
 | Ctrl+Alt+Space | 選択候補を確定 |
-| Ctrl+Alt+Down / Up | 次 / 前の候補 |
+| Space / Shift+Space | 通常の空白入力。候補操作には使わない |
+| Tab / ↓ | 未選択なら1件目を選択。その後は次候補 |
+| Shift+Tab / ↑ | 未選択なら最後を選択。その後は前候補 |
+| Enter | 選択モード中だけ確定。選択開始前は入力先へ渡す |
 | Ctrl+Alt+1～9 | 表示中の対応番号を直接確定 |
 | Esc | 現在の候補をキャンセル |
-| Tab / Enter | 本来のアプリ操作を維持(既定) |
 
-候補がない場合・対象外欄・アプリ無効時には確定キーを横取りしない。状態が変わった直後の確定は再検証でキャンセルされることがある。通常の矢印キーを候補移動に割り当てていないため、エディタのカーソル移動を維持する。Tabを有効化すると先頭候補を確定し、Enterを有効化すると選択候補を確定する。どちらも改行・セル移動は送らない。
+候補が出ただけのときは**未選択（ハイライトなし）**。最初のTab/↓で1件目を選んでからEnterで語尾だけを挿入する。未選択のEnterは補完せず、入力先の通常動作になる。確定したEnterを押し続けても、キーを離すまではリピートを入力先へ流さない。離してからの別のEnterは通常の改行/送信へ戻る。
+
+候補がない場合・対象外欄・アプリ無効時・IME ONでは新しいキー押下を横取りしない。SpaceとShift+Spaceは候補表示中・選択中も空白入力へ渡し、単語区切りとして選択を終了する。左右移動・通常文字入力・クリック・Escでも選択を終了する。Ctrl+Alt+Tabは登録しない。Ctrl+Alt+Spaceは未選択でも明示的に1件目を確定するショートカットとして残す。状態が変わった直後の確定は再検証で中止される。`ImeStyle=0`で標準キーによる操作をアプリ別にも無効化できる。
 
 トレイから全体ON/OFF、単語登録、設定ファイル表示、設定再読込、状態表示、終了を操作できる。全体OFFでは学習も停止する。スタートアップ登録は自動で行わない。
 
@@ -67,13 +78,14 @@ Windows 11の新しいメモ帳の内部コントロールが対応クラスか�
 | DataDirectory | 個人DBの場所。既定`user`。絶対パス指定も可。設定ファイルの場所は変わらない |
 | Debug | 例外時の日時と固定診断文だけを`status.log`へ記録。入力・単語・文章は記録しない |
 | Keys / Accept, Next, Previous, Cancel | 例: `^!Space`。`^` Ctrl、`!` Alt、`+` Shift、`#` Win。1キーと単純な修飾だけ対応 |
-| DirectModifier / Tab / Enter | 番号キーの修飾(既定`^!`)、Tab/Enter確定 |
+| Keys / ImeStyle | 既定1。Tab/↑↓から選択モードへ入りEnterで確定。Spaceは空白入力。アプリ別の同名設定でも無効化可能 |
+| DirectModifier / Tab / Enter | 番号キーの修飾(既定`^!`)と個別キー許可。Enter=1でも未選択候補は自動確定しない |
 | Applications / DefaultEnabled, DefaultLearning | 未登録アプリの既定値。安全のため両方0 |
 | Applications / Excluded | カンマ区切りの除外exe名。明示許可より優先 |
 | app:実行ファイル名 / Enabled, Learning, Keys | アプリ別の補完・学習・候補キーON/OFF |
 | app:実行ファイル名 / Tab, Enter | アプリ別のTab/Enter確定ON/OFF |
 
-メモ帳・Notepad++・サクラのプロファイルは許可しているが、**プロファイル許可はそのアプリの独自コントロールに対応したことを意味しない**。上記の安全判定を通る通常欄と、対応版のサクラ本文だけが対象。Excel/VS Codeは初期設定で無効。Chrome系/Codexは安全なUIA入力欄だけ許可し、学習をOFFにする。新しいアプリを許可する際は、学習を先に無効のまま `docs/MANUAL_TESTS.md` を確認する。
+プロファイル許可は、そのアプリの独自コントロールすべてに対応したことを意味しない。上記の安全判定を通る通常欄、対応版のサクラ本文、UIAのEdit入力欄だけが対象。Excel/VS Codeは初期設定で無効。新しいアプリを許可する際は学習を無効のまま `docs/MANUAL_TESTS.md` を確認する。
 
 ## 個人辞書とデータ管理
 
@@ -97,9 +109,11 @@ $ahk = "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe"
 
 ## 構成と既存IME表示との関係
 
-`Lib/All.ahk`から、Config、SQLite、FieldGuard、ImeStateProvider、CaretProvider、SuggestionEngine、UserDictionary、InputTracker、SuggestionGui、Applicationを読む。`EnglishAutocomplete.ahk`が常駐入口、`ManageDictionary.ahk`が管理入口。
+`Lib/All.ahk`から、Config、SQLite、Dpi、FieldGuard、UiaFieldProvider、SakuraFieldProvider、ImeStateProvider、CaretProvider、SuggestionEngine、UserDictionary、InputTracker、SuggestionGui、Applicationを読む。`EnglishAutocomplete.ahk`が常駐入口、`ManageDictionary.ahk`が管理入口。
 
-候補生成はInputHookコールバックから30msのタイマーへ集約する。コールバック内で辞書SQL・IMEメッセージ・UIA・ファイルI/Oを行わない。確定前には実テキストとの一致を必須にする。非同期通知より先にアプリのテキストが変わった場合は候補を隠して短時間再検証する。通知と一致しないテキストを無条件に置換しない。
+候補生成はInputHookコールバックから30msのタイマーへ集約する。InputHookコールバック内で辞書SQL・IMEメッセージ・UIA・ファイルI/Oを行わない。開いた半角英数に限り、入力欄のHWND・PID・フォーカス一致とTextEditPatternの未確定範囲をUIAで照会する。接続/取引のタイムアウトは各50ms、IMEメッセージは20ms。UIAのツリー探索・本文取得・イベント購読・他プロセスのHIMC参照・IMEモード書換えは行わない。IMEモードはUIA照会の前後で照合し、本文と選択位置も再確認する。許可結果をキャッシュせず、候補キーの条件判定と確定前に再照会する。外部照会から送信までを原子的に固定する方式ではない。
+
+確定前には実テキストとの一致を必須にする。非同期通知より先にアプリのテキストが変わった場合は候補を隠して短時間再検証する。通知と一致しないテキストを無条件に置換しない。未確定範囲の判定仕様は[MicrosoftのTextEdit仕様](https://learn.microsoft.com/en-us/windows/win32/winauto/textedit-control-pattern)と[GetActiveComposition](https://learn.microsoft.com/en-us/windows/win32/api/uiautomationclient/nf-uiautomationclient-iuiautomationtexteditpattern-getactivecomposition)に従う。
 
 既存の `GoogleIME風入力モード表示.ahk` と `IME入力モード表示.ahk` を実際に調査した。現に稼働していた前者はCaretGetPos→GUIThreadInfo→MSAA→フォーカスUIAを利用し、180/350msでIME監視、モード変化時に60ms集約して座標を解決する。後者には75/100/150/400msの可変監視、1000msの入力コンテキストキャッシュ、UIA/MSAAの失敗時待機、手動IA2診断等がある。
 
@@ -109,11 +123,13 @@ $ahk = "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe"
 |---|---|---|
 | A: 1プロセスへ統合 | 高コスト探索とキャッシュを完全共有できる | 既存ホットキー・常駐ライフサイクルへの影響が大きい。今回不採用 |
 | B: IME表示がIPCで配信 | プロセス分離とキャッシュ共有を両立 | 既存側への変更と世代/フォーカス/鮮度管理が必要。将来候補 |
-| C: 既存無変更・候補時に軽量取得 | 既存環境への影響が最小 | カスタム欄は停止。**今回採用**。Win32のみなのでUIA/IA2の重複探索は0回 |
+| C: 既存無変更・候補時に軽量取得 | 既存環境への影響が最小 | カスタム欄は停止。**今回採用**。座標はWin32のみ。開いた半角英数では安全確認用のフォーカスUIA照会を追加 |
 
 CaretProvider.GetPosition(context)はFound/X/Y/Method/Hwnd/Focus/Tick/Ageを返す。GUIThreadInfoのキャレット座標を、そのHWND自身のDPI認識方式で画面座標へ変換し、物理ピクセルへ正規化する。入力先移動時に古い位置を使わないよう毎回確認する。候補がない待機中には位置を取得しない。位置取得にUIA/IA2は使用せず、マウス位置へ推測表示しない。
 
 候補GUIはキャレットの物理点があるモニターを選び、入力先の主ウィンドウのDPIに依存せず対象モニターの実効DPIを取得する。計測と描画で同じフォントを使用し、DPIを二重換算しない。行高は日本語・太字を含む実測値＋余白、幅は内容に応じて180～520px相当（96DPI基準、作業領域が上限）。長い訳文は改行せず末尾を省略する。高さが足りない場合も選択行が見える範囲を表示する。
+
+実環境の4モニター（全150%、負座標・上下配置を含む）で配置と文字の収まりを確認済み。100～300%のフォント寸法・配置、入力先のDPI認識方式別の座標変換も自動試験済み。異なる実モニター倍率間の移動や表示設定の動的変更は未検証。
 
 ## 辞書の再生成
 
@@ -148,6 +164,10 @@ python tools/build_dictionary.py --size 70
 ./tools/verify.ps1 -Integration
 # 大小文字だけを短時間で実入力確認する
 ./tools/verify.ps1 -CaseOnly
+# 表示設定を変更せずDPI別フォント・配置と接続中モニターを検証する
+./tools/verify.ps1 -Dpi
+# 未選択→初回Tab→Enterと長押しを専用Editで約2秒確認する
+./tools/verify.ps1 -SelectionIntegration
 ```
 
 AHK構文検証は100msで終了する一時絶対Includeラッパーと`/ErrorStdOut`を使用し、終了コード0を要求する。ラッパーと一時出力はfinallyで削除する。テストは個人DBではなく専用の一時DBを使う。入力試験は新しいネイティブEdit窓だけに合成イベントを送り、終了時に窓とDBを削除し、元のフォーカスとテストスレッドのHKLを戻す。
@@ -164,7 +184,7 @@ AHK構文検証は100msで終了する一時絶対Includeラッパーと`/ErrorS
 
 ## 次の改善
 
-1. Google/MS-IMEそれぞれの実入力とON/OFF切替を確認する。IME ONはネイティブIMEへ任せる。
+1. Google/MS-IMEそれぞれで、開いた半角英数・未確定入力・再変換・モード切替の実入力を検証する。標準Edit等のTextEditPattern非対応欄を許可するには、別の信頼できる未確定入力判定が必要。
 2. IPC(B案)で既存インジケーターの座標を共有し、UIA/IA2を重複させずカスタム欄へ広げる。同時に入力欄の安全性とテキスト照合プロバイダーを追加する。
 3. Excel、Scintilla、Chromium/Electronごとの安全な挿入とフィールド識別を実装し、実アプリ別に試験する。
 4. 異なるDPI/複数モニター、長時間常駐、複数IME、物理キーボードでの高負荷入力を確認する。

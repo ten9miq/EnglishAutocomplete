@@ -3,7 +3,8 @@ param(
     [switch]$Integration,
     [switch]$CaseOnly,
     [switch]$ImeIntegration,
-    [switch]$Dpi
+    [switch]$Dpi,
+    [switch]$SelectionIntegration
 )
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -41,9 +42,11 @@ foreach ($entry in @('EnglishAutocomplete.ahk','ManageDictionary.ahk','tests/fix
 Write-Output "Temporary syntax wrappers removed=$(!(Test-Path (Join-Path $root '.syntax-check.ahk')))"
 if (Test-Path (Join-Path $root 'tests/core.ahk')) { Invoke-Ahk (Join-Path $root 'tests/core.ahk') }
 if (Test-Path (Join-Path $root 'tests/ime.ahk')) { Invoke-Ahk (Join-Path $root 'tests/ime.ahk') }
+if (Test-Path (Join-Path $root 'tests/navigation.ahk')) { Invoke-Ahk (Join-Path $root 'tests/navigation.ahk') }
 if (Test-Path (Join-Path $root 'tests/uia.ahk')) { Invoke-Ahk (Join-Path $root 'tests/uia.ahk') }
 if (Test-Path (Join-Path $root 'tests/sakura.ahk')) { Invoke-Ahk (Join-Path $root 'tests/sakura.ahk') }
 if ($Integration) { Invoke-Ahk (Join-Path $root 'tests/integration.ahk') }
 elseif ($CaseOnly) { Invoke-Ahk -Script (Join-Path $root 'tests/integration.ahk') -ExtraArgs @('--case-only') }
 if ($ImeIntegration) { Invoke-Ahk (Join-Path $root 'tests/ime-integration.ahk') }
 if ($Dpi) { Invoke-Ahk (Join-Path $root 'tests/dpi.ahk') }
+if ($SelectionIntegration) { Invoke-Ahk (Join-Path $root 'tests/selection-integration.ahk') }

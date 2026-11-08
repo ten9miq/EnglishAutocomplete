@@ -3,7 +3,7 @@
 class EacApplication {
     Visible := false
     Sending := false
-    Selected := 1
+    Selected := 0
     ShownGeneration := -1
     Target := false
     Pending := []
@@ -14,6 +14,13 @@ class EacApplication {
     Navigating := false
     CommitCount := 0
     TextRetryAt := 0
+    Accepting := false
+    AcceptScopeKey := ""
+    EnterLatched := false
+    EnterActionArmed := false
+    EnterReleaseSerial := 0
+    EnterArmedSerial := 0
+    ReleaseBindings := []
 
     __New(config, start := true) {
         this.Config := config
@@ -23,7 +30,7 @@ class EacApplication {
         this.Gui := EacSuggestionGui(config)
         this.Caret := EacCaretProvider(config.CaretMode)
         this.Ime := EacImeStateProvider()
-        this.Ime.NativePriority := true
+        this.Ime.NativePriority := true ; an open IME owns conversion and its keys
         this.RefreshCallback := ObjBindMethod(this, "Refresh")
         this.TickCallback := ObjBindMethod(this, "Tick")
         this.KeyBindings := []
@@ -53,15 +60,22 @@ class EacApplication {
         SetTimer this.TickCallback, 0
         SetTimer this.RefreshCallback, 0
         this.Reset()
-        for binding in this.KeyBindings {
-            HotIf binding.Condition
-            Hotkey binding.Key, "Off"
+        for group in [this.KeyBindings, this.ReleaseBindings] {
+            for binding in group {
+                if binding.Condition
+                    HotIf binding.Condition
+                else
+                    HotIf
+                Hotkey binding.Key, "Off"
+            }
         }
         HotIf
+        this.EnterLatched := false, this.EnterActionArmed := false, this.Accepting := false
     }
 
     Reset(*) {
         this.InputModifierMask := 0
+        this.ClearSelection()
         this.Visible := false
         this.Gui.Hide()
         this.Tracker.Reset()
@@ -71,6 +85,7 @@ class EacApplication {
     }
 
     Hide() {
+        this.ClearSelection()
         this.Visible := false
         this.Gui.Hide()
     }
@@ -78,11 +93,24 @@ class EacApplication {
     OnChar(hook, text) {
         if this.Sending
             return
+        if (this.EnterLatched || this.Accepting) && (text = "`r" || text = "`n" || text = "`r`n")
+            return
+        ; Some InputHook notifications can precede the hotkey action for the
+        ; same key. Candidate-control characters must not finish the prefix.
+        if this.Visible && this.Target {
+            policy := this.Target.Policy
+            if (text = "`t" && (policy.ImeStyleKeys || policy.Tab))
+                || ((text = "`r" || text = "`n" || text = "`r`n")
+                    && this.Navigating && this.Selected > 0 && (policy.Enter || policy.ImeStyleKeys))
+                return
+        }
+        this.ClearSelection()
+        this.TextRetryAt := 0
         ; Injected hotkey handling may release modifiers at SendLevel 0, whose
         ; key-up notifications are deliberately ignored by this InputHook.
         this.InputModifierMask &= this.Modifiers()
         this.LastInputAt := A_TickCount
-        context := EacFieldGuard.Context()
+        context := this.CurrentContext()
         if !context {
             this.Reset()
             return
@@ -106,6 +134,7 @@ class EacApplication {
         if this.Visible {
             for binding in this.KeyBindings
                 if binding.Vk = vk && (this.Modifiers() | this.InputModifierMask) = binding.Modifiers
+                    && this.BindingPermitted(binding)
                     return
         }
         if this.InputModifierMask & 11 || GetKeyState("Ctrl") || GetKeyState("Alt")
@@ -318,16 +347,45 @@ class EacApplication {
     }
 
     CanIntercept(binding, *) {
+        plainEnter := binding.Vk = 13 && binding.Modifiers = 0
+        if plainEnter && this.EnterLatched
+            return true ; the entire consumed press remains ours until key-up
+        if plainEnter && this.Accepting {
+            context := this.CurrentContext()
+            if !context || context.Key != this.AcceptScopeKey
+                return false
+            ime := this.Ime.GetState(context)
+            if !ime.Allowed && ime.Reason != "UnknownIME"
+                return false ; a new press with native IME ON belongs to that IME
+            return this.ArmEnter()
+        }
         if !this.Visible || this.Sending || this.ShownGeneration != this.Tracker.Generation || !this.Target
             return false
-        if !this.Target.Policy.Keys || !this.Config.Enabled
-            return false
-        if binding.Key = "Tab" && !this.Target.Policy.Tab
-            return false
-        if binding.Key = "Enter" && !this.Target.Policy.Enter
+        if !this.BindingPermitted(binding)
             return false
         if binding.Action = "number" && binding.Number > this.Items.Length
             return false
+        if binding.Vk = 13 && binding.Modifiers = 0 && this.Navigating {
+            ; Once conversion has started, a failed text validation must cancel
+            ; it, not fall through to a chat application's Send/Submit action.
+            context := this.CurrentContext()
+            if !context || context.Key != this.Target.Context.Key
+                return false
+            ime := this.Ime.GetState(context)
+            allowed := (ime.Allowed && ime.Key = this.Target.Ime.Key) || (!ime.Allowed && ime.Reason = "UnknownIME")
+            return allowed && this.ArmEnter()
+        }
+        if this.Target.Field.HasOwnProp("Identity")
+            && (binding.Action = "next" || binding.Action = "previous") {
+            ; Navigation changes only our popup. Fresh focus/safety metadata is
+            ; sufficient; defer expensive text/endpoint checks to Commit.
+            context := this.CurrentContext()
+            if !context || context.Key != this.Target.Context.Key
+                return false
+            ime := this.Ime.GetState(context)
+            return ime.Allowed && ime.Key = this.Target.Ime.Key
+                && EacFieldGuard.StillFocused(this.Target.Field, context)
+        }
         snapshot := this.Snapshot()
         return snapshot && snapshot.Context.Key = this.Target.Context.Key
             && snapshot.Ime.Key = this.Target.Ime.Key
@@ -337,26 +395,94 @@ class EacApplication {
             && EacFieldGuard.StillFocused(snapshot.Field, snapshot.Context)
     }
 
+    BindingPermitted(binding) {
+        if !this.Target || !this.Config.Enabled || !this.Target.Policy.Keys
+            return false
+        policy := this.Target.Policy
+        if binding.StyleOnly && !policy.ImeStyleKeys
+            return false
+        if binding.Vk = 9 && (binding.Modifiers & ~4) = 0 && !policy.ImeStyleKeys && !policy.Tab
+            return false
+        if binding.Vk = 13 && binding.Modifiers = 0
+            && (!this.Navigating || this.Selected < 1 || (!policy.Enter && !policy.ImeStyleKeys))
+            return false
+        return true
+    }
+
+    CurrentContext() => EacFieldGuard.Context()
+
     Action(binding, *) {
-        if !this.CanIntercept(binding)
-            return
+        plainEnter := binding.Vk = 13 && binding.Modifiers = 0
+        if plainEnter {
+            ; The hotkey condition armed exactly one action. Repeats do nothing.
+            ; A key-up which ran before this handler invalidates only the latch,
+            ; not the already captured confirm action.
+            if !this.EnterActionArmed
+                return
+            this.EnterActionArmed := false
+            this.EnterLatched := this.EnterReleaseSerial = this.EnterArmedSerial
+            if this.Accepting || !this.Visible || !this.Navigating || this.Selected < 1
+                return
+        } else {
+            if this.Accepting {
+                if binding.Action = "cancel"
+                    this.Reset()
+                return
+            }
+            if !this.CanIntercept(binding)
+                return
+        }
         if binding.Action = "cancel" {
             this.Reset()
             return
         }
         if binding.Action = "next" || binding.Action = "previous" {
-            this.Selected := Mod(this.Selected - 1 + (binding.Action = "next" ? 1 : -1) + this.Items.Length, this.Items.Length) + 1
-            this.Refresh()
+            if !this.Navigating || this.Selected < 1
+                this.Selected := binding.Action = "previous" ? this.Items.Length : 1
+            else
+                this.Selected := Mod(this.Selected - 1 + (binding.Action = "previous" ? -1 : 1) + this.Items.Length, this.Items.Length) + 1
+            this.Navigating := true
+            this.RenderSelection()
             return
         }
         if binding.Action = "number"
             this.Selected := binding.Number
-        if binding.Action = "first"
+        if binding.Action = "first" || this.Selected < 1
             this.Selected := 1
-        this.Commit()
+        this.Navigating := true
+        this.AcceptScopeKey := this.Target.Context.Key
+        this.Accepting := true
+        try this.Commit()
+        finally this.Accepting := false
+    }
+
+    ClearSelection() {
+        this.Selected := 0, this.Navigating := false
+    }
+    ArmEnter() {
+        if !this.EnterActionArmed {
+            this.EnterArmedSerial := this.EnterReleaseSerial
+            this.EnterActionArmed := true
+        }
+        return true
+    }
+    CanReleaseEnter(*) => this.EnterLatched
+    ReleaseEnter(*) {
+        this.EnterReleaseSerial += 1
+        this.EnterLatched := false
+    }
+
+    RenderSelection() {
+        if this.Target && this.Target.Field.HasOwnProp("Identity") && this.Target.Field.Anchor {
+            this.Gui.Show(this.Items, this.Selected, this.Target.Field.Anchor)
+            this.Visible := true
+        } else
+            this.Refresh()
     }
 
     Commit() {
+        if this.Accepting && this.Selected < 1
+            return false
         generation := this.Tracker.Generation
         snapshot := this.Snapshot()
         prefix := this.Tracker.Word
@@ -409,12 +535,40 @@ class EacApplication {
     }
 
     InstallKeys() {
+        for binding in this.BuildBindings() {
+            HotIf binding.Condition
+            Hotkey "$" binding.Key, ObjBindMethod(this, "Action", binding)
+            HotIf
+            this.KeyBindings.Push(binding)
+        }
+        ; Key-up must not depend on InputHook: suppressed hotkey events can
+        ; bypass its notifications. The passive fallback observes ordinary key
+        ; releases without changing their native behavior.
+        condition := ObjBindMethod(this, "CanReleaseEnter")
+        HotIf condition
+        Hotkey "$*Enter up", ObjBindMethod(this, "ReleaseEnter")
+        this.ReleaseBindings.Push({Key: "*Enter up", Condition: condition})
+        HotIf
+        Hotkey "~*Enter up", ObjBindMethod(this, "ReleaseEnter")
+        this.ReleaseBindings.Push({Key: "~*Enter up", Condition: false})
+    }
+
+    BuildBindings() {
         definitions := [[this.Config.AcceptKey, "accept"], [this.Config.NextKey, "next"],
             [this.Config.PreviousKey, "previous"], [this.Config.CancelKey, "cancel"],
-            ["Tab", "first"], ["Enter", "accept"]]
+            ["Enter", "accept"]]
+        ; Standard conversion keys are candidate-only aliases. Explicit custom
+        ; shortcuts remain authoritative when an alias has the same spelling.
+        aliases := [["Tab", "next"], ["+Tab", "previous"], ["Down", "next"], ["Up", "previous"]]
+        primary := Map()
+        for definition in definitions
+            primary[StrLower(definition[1])] := true
+        for alias in aliases
+            if !primary.Has(StrLower(alias[1]))
+                definitions.Push([alias[1], alias[2], 0, true])
         loop 9
             definitions.Push([this.Config.DirectModifier A_Index, "number", A_Index])
-        used := Map()
+        used := Map(), bindings := []
         for definition in definitions {
             key := definition[1]
             if key = ""
@@ -428,20 +582,17 @@ class EacApplication {
                 throw Error("Unmodified text keys cannot be candidate hotkeys")
             mask := (InStr(match[1], "^") ? 1 : 0) | (InStr(match[1], "!") ? 2 : 0)
                 | (InStr(match[1], "+") ? 4 : 0) | (InStr(match[1], "#") ? 8 : 0)
-            binding := {Key: key, Action: definition[2], Number: definition.Length = 3 ? definition[3] : 0,
+            binding := {Key: key, Action: definition[2], Number: definition.Length >= 3 ? definition[3] : 0,
+                StyleOnly: definition.Length >= 4 ? definition[4] : false,
                 Vk: GetKeyVK(match[2]), Modifiers: mask}
             binding.Condition := ObjBindMethod(this, "CanIntercept", binding)
-            HotIf binding.Condition
-            Hotkey "$" key, ObjBindMethod(this, "Action", binding)
-            HotIf
-            this.KeyBindings.Push(binding)
+            bindings.Push(binding)
         }
+        return bindings
     }
 
     Modifiers() => (GetKeyState("Ctrl") ? 1 : 0) | (GetKeyState("Alt") ? 2 : 0)
         | (GetKeyState("Shift") ? 4 : 0) | ((GetKeyState("LWin") || GetKeyState("RWin")) ? 8 : 0)
-
-    CurrentContext() => EacFieldGuard.Context()
 
     DiagnosticPacket(query := 0, *) {
         ; Read-only, cached numeric status. No field text, word, URL or title.
@@ -467,9 +618,5 @@ class EacApplication {
         return (this.Config.Enabled ? 1 : 0) | (this.Visible ? 2 : 0) | (this.Navigating ? 4 : 0)
             | (this.HasOwnProp("Hook") && this.Hook.InProgress ? 8 : 0)
             | (this.Items.Length << 4) | (this.Selected << 8) | (code << 16) | (this.CommitCount << 32)
-    }
-
-    ClearSelection() {
-        this.Selected := 1, this.Navigating := false
     }
 }

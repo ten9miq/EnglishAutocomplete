@@ -11,7 +11,7 @@ class EacConfig {
         }
         this.Enabled := this.Int("General", "Enabled", 1, 0, 1)
         this.MinLength := this.Int("General", "MinLength", 3, 2, 32)
-        this.MaxCandidates := this.Int("General", "MaxCandidates", 5, 1, 9)
+        this.MaxCandidates := this.Int("General", "MaxCandidates", 9, 1, 9)
         this.FontSize := this.Int("General", "FontSize", 11, 8, 24)
         this.OffsetX := this.Int("General", "OffsetX", 32, -1000, 1000)
         this.OffsetY := this.Int("General", "OffsetY", 80, -1000, 1000)
@@ -29,7 +29,7 @@ class EacConfig {
         this.DataDirectory := RegExMatch(data, "i)^(?:[a-z]:|\\\\)") ? data : root "\" data
         DirCreate this.DataDirectory
         this.AcceptKey := this.Read("Keys", "Accept", "^!Space")
-        this.NextKey := this.Read("Keys", "Next", "^!Down")
+        this.NextKey := this.Read("Keys", "Next", "Tab")
         this.PreviousKey := this.Read("Keys", "Previous", "^!Up")
         this.CancelKey := this.Read("Keys", "Cancel", "Esc")
         this.DirectModifier := this.Read("Keys", "DirectModifier", "^!")
@@ -37,6 +37,7 @@ class EacConfig {
             throw Error("DirectModifier must contain Ctrl/Alt/Win modifiers")
         this.Tab := this.Int("Keys", "Tab", 0, 0, 1)
         this.Enter := this.Int("Keys", "Enter", 0, 0, 1)
+        this.ImeStyleKeys := this.Int("Keys", "ImeStyle", 1, 0, 1)
         this.DefaultEnabled := this.Int("Applications", "DefaultEnabled", 0, 0, 1)
         this.DefaultLearning := this.Int("Applications", "DefaultLearning", 0, 0, 1)
         this.Excluded := "," StrLower(StrReplace(this.Read("Applications", "Excluded", ""), " ", "")) ","
@@ -60,7 +61,8 @@ class EacConfig {
             Learning: this.Learning && this.Int(section, "Learning", this.DefaultLearning, 0, 1),
             Keys: this.Int(section, "Keys", 1, 0, 1),
             Tab: this.Int(section, "Tab", this.Tab, 0, 1),
-            Enter: this.Int(section, "Enter", this.Enter, 0, 1)}
+            Enter: this.Int(section, "Enter", this.Enter, 0, 1),
+            ImeStyleKeys: this.Int(section, "ImeStyle", this.ImeStyleKeys, 0, 1)}
         if InStr(this.Excluded, "," process ",")
             policy.Enabled := false, policy.Learning := false
         this.Policies[process] := policy

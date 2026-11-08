@@ -57,12 +57,14 @@ SendLevel 1
 SetKeyDelay 18, 10
 TypeFixture("confi")
 Assert(App.Tracker.Word == "confi", "InputHook OnChar actual events")
-Assert(App.Visible && App.Items.Length == 5, "real candidate GUI")
+Assert(App.Visible && App.Items.Length == Settings.MaxCandidates, "real candidate GUI")
 Assert(WinExist("A") == FixtureGui.Hwnd && EacFieldGuard.Context().Focus == TestEdit.Hwnd,
     "NoActivate preserves target focus")
 expected := App.Items[1].Word
 before := TestEdit.Value
 Started := ClockMs()
+Assert(App.Selected = 0 && !App.Navigating, "prediction is initially unselected")
+App.Selected := 1
 Assert(App.Commit(), "suffix-only commit")
 CommitMs := ClockMs() - Started
 Sleep 100
@@ -88,12 +90,12 @@ Prepare()
 TypeFixture("confi")
 count := App.Items.Length
 SendLevel 1
-SendFixture "^!{Down}"
+SendFixture "{Tab}"
 Sleep 80
-Assert(App.Selected == 2, "configured next hotkey")
+Assert(App.Selected == 1 && App.Navigating, "first Tab selects first candidate and enters conversion mode")
 SendFixture "^!{Up}"
 Sleep 80
-Assert(App.Selected == 1, "configured previous hotkey")
+Assert(App.Selected == count, "configured previous hotkey wraps to last candidate")
 expected := App.Items[2].Word
 SendFixture "^!2"
 Sleep 120
@@ -144,12 +146,14 @@ Sleep 100
 Assert(!App.Visible && App.Tracker.Word == "", "shortcut invalidates")
 Prepare()
 TypeFixture("confi")
+App.Target.Policy.ImeStyleKeys := false
 SendLevel 1
 SendFixture "{Tab}"
 Sleep 100
 Assert(TestEdit.Value == "confi" && EacFieldGuard.Context().Focus == Password.Hwnd,
-    "default Tab passes through to next control")
+    "style opt-out Tab passes through to next control")
 Assert(!App.Visible, "password receives no candidate")
+Settings.Policies["autohotkey64.exe"].ImeStyleKeys := true
 Password.Focus()
 Assert(!EacFieldGuard.Read(EacFieldGuard.Context()), "ES_PASSWORD refused")
 SendLevel 1

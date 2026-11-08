@@ -17,6 +17,7 @@ for suffix in ["", "-journal", "-wal", "-shm"]
 settingsPath := A_ScriptDir "\results\settings.ini"
 FileCopy Root "\settings.default.ini", settingsPath, true
 Settings := EacConfig(Root, settingsPath)
+Assert(Settings.MaxCandidates == 9, "default candidate count")
 StartTime := NowMs()
 Personal := EacUserDictionary(Fixture, 3)
 Assert(Personal.Enabled, "SQLite native Unicode path")
@@ -25,7 +26,7 @@ Engine := EacSuggestionEngine(Root "\data\dictionary.db", Settings, Personal)
 LoadMs := NowMs() - LoadStart
 Assert(Engine.Db.Query("PRAGMA integrity_check")[1][1] == "ok", "dictionary integrity")
 Assert(Integer(Engine.Db.Query("SELECT count(*) FROM words")[1][1]) > 100000, "full dictionary shipped")
-Assert(Engine.Search("confi").Length == 5, "prefix query")
+Assert(Engine.Search("confi").Length == Settings.MaxCandidates, "prefix query returns configured candidate count")
 Assert(Engine.Search("CONFI")[1].Norm == Engine.Search("confi")[1].Norm, "case insensitive search")
 Assert(Engine.Search("zzzzzzzzzzzz").Length == 0, "unknown prefix")
 Assert(Engine.Search("co").Length == 0, "minimum length")
