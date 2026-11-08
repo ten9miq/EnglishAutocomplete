@@ -11,6 +11,9 @@ class EacApplication {
     Fault := ""
     InputModifierMask := 0
     LastInputAt := 0
+    Navigating := false
+    CommitCount := 0
+    TextRetryAt := 0
 
     __New(config, start := true) {
         this.Config := config
@@ -181,7 +184,7 @@ class EacApplication {
             ; Composition queries must not validate text captured before a
             ; remote provider changed it. Keep the same local text/caret snapshot.
             verified := EacFieldGuard.Read(context)
-            if !verified || verified.Position != field.Position
+            if !verified || !EacFieldGuard.SamePosition(verified, field)
                 || !(verified.Before == field.Before) || !(verified.After == field.After) {
                 this.SafetyReason := "TextChanged"
                 return false
@@ -202,6 +205,34 @@ class EacApplication {
     Tick() {
         if this.Tracker.Word = "" && !this.Visible && !this.Pending.Length
             return ; no caret or UIA work while idle
+        if this.Visible && this.Target && this.Target.Field.HasOwnProp("Identity")
+            && this.ShownGeneration = this.Tracker.Generation {
+            ; A stable preview/selection needs only a lightweight focus/IME
+            ; keepalive. Re-reading rich text every 400ms can race AX updates and
+            ; erase the conversion state even though the user changed no text.
+            context := this.CurrentContext()
+            if !context || context.Key != this.Target.Context.Key {
+                this.Reset()
+                return
+            }
+            ime := this.Ime.GetState(context)
+            if !ime.Allowed {
+                if ime.Reason != "UnknownIME"
+                    this.Reset()
+                return
+            }
+            if ime.Key != this.Target.Ime.Key {
+                this.Reset()
+                return
+            }
+            if !EacFieldGuard.StillFocused(this.Target.Field, context) {
+                if EacUia.LastHresult != -2146233083
+                    this.Reset()
+                return
+            }
+            this.Gui.Show(this.Items, this.Selected, this.Target.Field.Anchor)
+            return
+        }
         this.Refresh()
     }
 
@@ -214,11 +245,22 @@ class EacApplication {
             if generation != this.Tracker.Generation
                 return ; a newer input callback already armed its own refresh
             if !snapshot || (this.Tracker.ContextKey != "" && snapshot.Context.Key != this.Tracker.ContextKey) {
-                if !snapshot && this.SafetyReason = "TextChanged" {
+                if !snapshot && (this.SafetyReason = "TextChanged" || this.SafetyReason = "UnknownIME") {
                     this.Hide()
+                    if !this.TextRetryAt
+                        this.TextRetryAt := A_TickCount
+                    if A_TickCount - this.TextRetryAt > 350 {
+                        this.Reset()
+                        return
+                    }
                     SetTimer this.RefreshCallback, -this.Config.DebounceMs
                     return
                 }
+                this.Reset()
+                return
+            }
+            this.TextRetryAt := 0
+            if this.Target && !EacFieldGuard.SameTarget(snapshot.Field, this.Target.Field) {
                 this.Reset()
                 return
             }
@@ -246,13 +288,14 @@ class EacApplication {
                 if generation != this.Tracker.Generation
                     return
                 this.Items := items
-                this.Selected := 1
+                this.ClearSelection()
             }
             if !this.Items.Length {
                 this.Hide()
                 return
             }
-            anchor := this.Caret.GetPosition(snapshot.Context)
+            anchor := snapshot.Field.HasOwnProp("Anchor") && snapshot.Field.Anchor
+                ? snapshot.Field.Anchor : this.Caret.GetPosition(snapshot.Context)
             if generation != this.Tracker.Generation
                 return
             if !anchor.Found {
@@ -288,7 +331,10 @@ class EacApplication {
         snapshot := this.Snapshot()
         return snapshot && snapshot.Context.Key = this.Target.Context.Key
             && snapshot.Ime.Key = this.Target.Ime.Key
+            && EacFieldGuard.SameTarget(snapshot.Field, this.Target.Field)
+            && (!snapshot.Field.HasOwnProp("Identity") || EacFieldGuard.SamePosition(snapshot.Field, this.Target.Field))
             && EacFieldGuard.Matches(snapshot.Field, this.Tracker.Word)
+            && EacFieldGuard.StillFocused(snapshot.Field, snapshot.Context)
     }
 
     Action(binding, *) {
@@ -311,11 +357,14 @@ class EacApplication {
     }
 
     Commit() {
+        generation := this.Tracker.Generation
         snapshot := this.Snapshot()
         prefix := this.Tracker.Word
         if !snapshot || !this.Target || snapshot.Context.Key != this.Target.Context.Key
             || snapshot.Ime.Key != this.Target.Ime.Key || !EacFieldGuard.Matches(snapshot.Field, prefix)
-            || !this.Visible || this.Selected > this.Items.Length {
+            || !EacFieldGuard.SameTarget(snapshot.Field, this.Target.Field)
+            || (snapshot.Field.HasOwnProp("Identity") && !EacFieldGuard.SamePosition(snapshot.Field, this.Target.Field))
+            || !this.Visible || this.Selected < 1 || this.Selected > this.Items.Length {
             this.Reset()
             return false
         }
@@ -327,6 +376,19 @@ class EacApplication {
         suffix := SubStr(word, StrLen(prefix) + 1)
         if suffix = ""
             return false
+        verifiedIme := this.Ime.GetState(snapshot.Context)
+        if !verifiedIme.Allowed || verifiedIme.Key != snapshot.Ime.Key
+            || !EacFieldGuard.StillFocused(snapshot.Field, snapshot.Context) {
+            this.Reset()
+            return false
+        }
+        current := EacFieldGuard.Context()
+        finalIme := this.Ime.GetState(snapshot.Context)
+        if !current || current.Key != snapshot.Context.Key || !finalIme.Allowed
+            || finalIme.Key != snapshot.Ime.Key || generation != this.Tracker.Generation || !this.Visible {
+            this.Reset()
+            return false
+        }
         this.Sending := true
         this.Hide()
         try {
@@ -338,6 +400,7 @@ class EacApplication {
             this.Tracker.Generation += 1
             this.Pending.Push({Word: prefix suffix, ContextKey: snapshot.Context.Key,
                 Tick: A_TickCount, Boundary: false})
+            this.CommitCount += 1
         } finally {
             this.Sending := false
         }
@@ -377,4 +440,36 @@ class EacApplication {
 
     Modifiers() => (GetKeyState("Ctrl") ? 1 : 0) | (GetKeyState("Alt") ? 2 : 0)
         | (GetKeyState("Shift") ? 4 : 0) | ((GetKeyState("LWin") || GetKeyState("RWin")) ? 8 : 0)
+
+    CurrentContext() => EacFieldGuard.Context()
+
+    DiagnosticPacket(query := 0, *) {
+        ; Read-only, cached numeric status. No field text, word, URL or title.
+        if query = 2
+            return EacUiaFieldProvider.Stage | (EacUia.LastProperty << 8) | (EacUia.LastVariantType << 32)
+        if query = 3
+            return EacUia.LastHresult
+        if query = 4
+            return EacUiaFieldProvider.BoundsStart
+        if query = 5
+            return EacUiaFieldProvider.BoundsEnd
+        if query = 6
+            return EacUiaFieldProvider.BoundsFlags
+        reasons := ["OK", "Disabled", "NoContext", "UnknownField", "UIAUnsafeField",
+            "UIAWindowMismatch", "UIAReadOnlyOrRange", "UIARange", "UIATextUnit",
+            "UIACaretUnavailable", "TextChanged", "FocusChanged", "UIAUnavailable",
+            "NativeIMEPriority", "IMEChanged", "UnknownIME", "UnknownLayout", "Field"]
+        code := 0
+        if this.HasOwnProp("SafetyReason")
+            for index, reason in reasons
+                if reason = this.SafetyReason
+                    code := index
+        return (this.Config.Enabled ? 1 : 0) | (this.Visible ? 2 : 0) | (this.Navigating ? 4 : 0)
+            | (this.HasOwnProp("Hook") && this.Hook.InProgress ? 8 : 0)
+            | (this.Items.Length << 4) | (this.Selected << 8) | (code << 16) | (this.CommitCount << 32)
+    }
+
+    ClearSelection() {
+        this.Selected := 1, this.Navigating := false
+    }
 }

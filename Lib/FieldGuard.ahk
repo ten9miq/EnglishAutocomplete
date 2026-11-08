@@ -33,6 +33,8 @@ class EacFieldGuard {
             cls := WinGetClass("ahk_id " context.Focus)
             if cls = "SakuraView182"
                 return EacSakuraFieldProvider.Read(context)
+            if RegExMatch(cls, "^Chrome_(?:WidgetWin_\d+|RenderWidgetHostHWND)$")
+                return EacUiaFieldProvider.Read(context)
             ; No Chromium renderer/Scintilla/document guessing or unsafe opt-in.
             if !RegExMatch(cls, "i)^(?:Edit|RichEdit(?:20[AW]|50[AW]|D2DPT)?)$")
                 return false
@@ -69,6 +71,19 @@ class EacFieldGuard {
         this.LastReason := reason
         return false
     }
+
+    static SameTarget(a, b) {
+        aProvider := a.HasOwnProp("Provider") ? a.Provider : "Native"
+        bProvider := b.HasOwnProp("Provider") ? b.Provider : "Native"
+        return aProvider = bProvider && (aProvider != "UIA" || a.Identity == b.Identity)
+    }
+    static SamePosition(a, b) {
+        if !this.SameTarget(a, b)
+            return false
+        return a.HasOwnProp("Provider") && a.Provider = "UIA"
+            ? EacUiaFieldProvider.SamePosition(a, b) : a.Position = b.Position
+    }
+    static StillFocused(field, context) => !field.HasOwnProp("Identity") || EacUiaFieldProvider.IsFocused(field, context)
 
     static Matches(field, word, boundary := false) {
         if !field || word = ""

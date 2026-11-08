@@ -79,3 +79,7 @@ IME ONは半角英数を含めネイティブIMEを優先する。表示後の�
 ## DPI・複数モニターの追加検証
 
 tests/dpi.ahkで100～300%のフォント寸法と配置、接続中のモニターの負座標・画面端・作業領域、入力先のDPI認識方式別の座標変換を確認する。実機は4台とも150%。異なる実倍率の組合せは未検証。
+
+## Chromium/ElectronのUIA入力欄
+
+Chrome/Brave/EdgeとChatGPT.exe/Codex.exeのUIA Editだけを対象にする。パスワード・readonly・選択あり・境界不明は停止する。同じrenderer内の別欄・位置移動・DOM再生成・IME切替でも旧候補を挿入しないこと。学習OFFを維持。実入力は後続記録と区別する。

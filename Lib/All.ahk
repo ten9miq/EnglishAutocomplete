@@ -3,6 +3,7 @@
 #Include Config.ahk
 #Include Dpi.ahk
 #Include FieldGuard.ahk
+#Include UiaFieldProvider.ahk
 #Include SakuraFieldProvider.ahk
 #Include ImeStateProvider.ahk
 #Include CaretProvider.ahk

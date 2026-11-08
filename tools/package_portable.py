@@ -19,7 +19,7 @@ def package():
             if path.is_file() and not EXCLUDE.intersection(path.relative_to(ROOT).parts):
                 if path.name.startswith("resident-metrics") and path.suffix == ".json":
                     continue
-                if path.suffix.lower() in {".ahk", ".db", ".json", ".md", ".txt", ".py", ".ps1"}:
+                if path.suffix.lower() in {".ahk", ".db", ".json", ".md", ".txt", ".py", ".ps1", ".html"}:
                     paths.append(path)
     with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted(set(paths)):

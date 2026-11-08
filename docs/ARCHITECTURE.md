@@ -61,3 +61,21 @@ UIA/TSF/IA2や新しいフィールドプロバイダーの追加、既存表示
 - 状態・カーソル・近傍を前後で照合し、候補確定前にも既存Snapshotから再照会する。空文書と正規のEOF空行を扱う。カーソル座標は既存Win32 CaretProviderを使用する。IME制限は緩和しない。
 
 このプロトコルはサクラの内部共有データ版に依存する。将来版は先頭レイアウトと状態照会の双方を確認してから追加する。32bit 2.4.3.7173のみ実機確認済み。source ZIPと照合用ヘッダーは`tools/sources/`、試験文書・結果は`tests/results/`に置き、Git/配布物へ含めない。
+
+## Chromium/ElectronのUIA入力プロバイダー
+
+`Chrome_WidgetWin_*`/`Chrome_RenderWidgetHostHWND`に対し、現在focusedなUIA要素を取得する。ControlType=Edit、HasKeyboardFocus/Focusable/Enabled=true、Password/Offscreen=falseを厳格なVARIANT型付きで要求する。NotSupportedやMixedをfalseへ変換しない。RawViewWalkerで祖先だけを上限32段・全体200msまで辿り、Win32前面HWNDの要素に一致することを確認する。RPCの接続・取引タイムアウトは各50ms。[Microsoft property仕様](https://learn.microsoft.com/en-us/windows/win32/api/uiautomationclient/nf-uiautomationclient-iuiautomationelement-getcurrentpropertyvalueex)
+
+TextPatternの単一collapsed選択を使用し、選択と左右の近傍がその入力欄のDocumentRange内であること、IsReadOnly属性40015がBOOL=falseであることを確認する。左128文字・右1文字を別rangeにし、GetTextの129/2文字制限で切詰めを検出する。Characterが別unitへ繰上がって長過ぎる場合は停止する。[範囲移動仕様](https://learn.microsoft.com/en-us/windows/win32/api/uiautomationclient/nf-uiautomationclient-iuiautomationtextrange-moveendpointbyunit)
+
+UIA runtime identity・collapsed rangeのendpointで同じHWND内の入力欄と位置を区別する。本文と位置の再照合後、最後にfresh focused要素/HasKeyboardFocusを確認する。UIAキャレット矩形がなければ停止し、共有renderer HWNDのWin32キャレットへ推測しない。Snapshot読取り後にもIMEを再照会し、Commitはさらにフォーカス・IME・入力世代を送信直前に確認する。外部アプリの状態とキー送信を原子的に固定する方式ではない。
+
+アプリ既定許可はChrome/Brave/EdgeとChatGPT.exe/Codex.exe。Webやチャットの自動学習はOFF。入力欄へSetValue/Select/Focusを呼ばず、UIA本文全文やValueを一括取得せず、クリップボードにも依存しない。未知の文書型や独自エディターの強制許可は設けない。
+
+### rich fieldの端点不整合に対する追加経路
+
+Codex実入力で、DocumentRangeとselectionの端点比較が範囲外になる一方、両方のGetEnclosingElementがfocused Editの子孫になるケースを確認した。比較結果±1を許可せず、RangeWithinで範囲全体の最内包含要素からfocused Editへ到達することを要求する。左右の近傍は、包含に失敗した試行ではGetTextを呼ばず、二分探索で入力欄内の範囲だけに制限する。
+
+右側が空の場合、より大きいtext unitへの繰上がり等で文中をEOFと誤認しないよう、追加でValueReadonly=falseを確認したEdit自身のValueを上限32767文字だけ一時取得する。caret左側の包含済み全範囲と完全一致すること、および最後のValue再照合を必須とする。この追加経路に限り上記のValue取得禁止を拡張するが、ページ全文は読まず、Value全文を返却データ・ログ・辞書へ保持しない。証明済みEOFは入力欄IDとUTF-16長で位置を比較する。
+
+UIAの更新ずれ・照会timeoutは最大350msだけ再試行する。安定して表示済みの候補と選択の定期維持は、focus・password・enabled・offscreen・IMEの軽量確認を行う。本文を変更しない候補移動では全文の範囲再取得を行わず、Enter確定時には既存の厳密な本文・位置・focus・IME・入力世代の検証を必須とする。変換中に検証失敗したEnterをチャット送信へ流さない。

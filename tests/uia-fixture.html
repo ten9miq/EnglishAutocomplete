@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>EnglishAutocomplete browser fixture</title>
+<style>body{font:18px sans-serif;margin:32px}input,textarea,[contenteditable]{display:block;margin:12px 0;padding:10px;width:650px;font:18px monospace;border:1px solid #888}button{padding:8px}</style>
+<h1>EnglishAutocomplete disposable browser fixture</h1>
+<form id="testForm"><label>Plain text<input id="plain" aria-label="Plain test text" value="compu" autofocus></label>
+<label>Textarea<textarea id="area" aria-label="Multiline test text">confi</textarea></label>
+<label>Contenteditable<div id="rich" role="textbox" aria-label="Rich test text" contenteditable="true">confi</div></label>
+<label>Read only<input id="readonly" aria-label="Read only test text" value="confi" readonly></label>
+<label>Password<input id="password" aria-label="Password test field" type="password"></label>
+<button type="submit">Test submit</button><output id="submits">0</output></form>
+<script>testForm.addEventListener('submit',e=>{e.preventDefault();submits.textContent=String(Number(submits.textContent)+1)});plain.setSelectionRange(5,5);</script>
