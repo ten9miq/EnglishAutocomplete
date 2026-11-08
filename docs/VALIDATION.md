@@ -86,3 +86,7 @@ AHKの細粒度測定はQueryPerformanceCounterを使用。SQLite辞書は113,43
 手動試験は [MANUAL_TESTS.md](MANUAL_TESTS.md) を使用する。
 
 実機診断JSONは利用者のローカル環境にだけ保存し、GitHubとPortable ZIPには含めない。上記は分離前の測定記録であり、PIDや当時のプロセス構成を現状とは扱わない。
+
+## IME安全判定の追加
+
+IME状態の不明・モード変更を拒否し、確定前にも状態キーを照合する。常駐本体はIME ONをネイティブIMEへ任せる。新しいtests/ime.ahkは56項目、専用RichEdit/UIAの試験は別入口として追加した。構文試験と実入力試験を区別する。

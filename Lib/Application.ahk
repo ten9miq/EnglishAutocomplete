@@ -20,6 +20,7 @@ class EacApplication {
         this.Gui := EacSuggestionGui(config)
         this.Caret := EacCaretProvider(config.CaretMode)
         this.Ime := EacImeStateProvider()
+        this.Ime.NativePriority := true
         this.RefreshCallback := ObjBindMethod(this, "Refresh")
         this.TickCallback := ObjBindMethod(this, "Tick")
         this.KeyBindings := []
@@ -165,20 +166,35 @@ class EacApplication {
             return false
         if !policy.Enabled
             return false
+        ime := this.Ime.GetState(context)
+        if !ime.Allowed {
+            this.SafetyReason := ime.Reason
+            return false
+        }
         this.SafetyReason := "Field"
         field := EacFieldGuard.Read(context)
         if !field {
             this.SafetyReason := EacFieldGuard.LastReason
             return false
         }
-        ime := this.Ime.GetState(context)
-        if !ime.Allowed {
-            this.SafetyReason := ime.Reason
-            return false
+        if ime.Reason = "IMEHalfwidthAlphanumeric" {
+            ; Composition queries must not validate text captured before a
+            ; remote provider changed it. Keep the same local text/caret snapshot.
+            verified := EacFieldGuard.Read(context)
+            if !verified || verified.Position != field.Position
+                || !(verified.Before == field.Before) || !(verified.After == field.After) {
+                this.SafetyReason := "TextChanged"
+                return false
+            }
         }
         current := EacFieldGuard.Context()
         if !current || current.Key != context.Key
             return false
+        verifiedIme := this.Ime.GetState(context)
+        if !verifiedIme.Allowed || verifiedIme.Key != ime.Key {
+            this.SafetyReason := verifiedIme.Allowed ? "IMEChanged" : verifiedIme.Reason
+            return false
+        }
         this.SafetyReason := "OK"
         return {Context: context, Field: field, Policy: policy, Ime: ime}
     }
@@ -269,8 +285,10 @@ class EacApplication {
             return false
         if binding.Action = "number" && binding.Number > this.Items.Length
             return false
-        context := EacFieldGuard.Context()
-        return context && context.Key = this.Target.Context.Key
+        snapshot := this.Snapshot()
+        return snapshot && snapshot.Context.Key = this.Target.Context.Key
+            && snapshot.Ime.Key = this.Target.Ime.Key
+            && EacFieldGuard.Matches(snapshot.Field, this.Tracker.Word)
     }
 
     Action(binding, *) {
@@ -296,7 +314,7 @@ class EacApplication {
         snapshot := this.Snapshot()
         prefix := this.Tracker.Word
         if !snapshot || !this.Target || snapshot.Context.Key != this.Target.Context.Key
-            || snapshot.Ime.Layout != this.Target.Ime.Layout || !EacFieldGuard.Matches(snapshot.Field, prefix)
+            || snapshot.Ime.Key != this.Target.Ime.Key || !EacFieldGuard.Matches(snapshot.Field, prefix)
             || !this.Visible || this.Selected > this.Items.Length {
             this.Reset()
             return false

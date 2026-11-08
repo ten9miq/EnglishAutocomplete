@@ -1,7 +1,8 @@
 param(
     [string]$Ahk = "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe",
     [switch]$Integration,
-    [switch]$CaseOnly
+    [switch]$CaseOnly,
+    [switch]$ImeIntegration
 )
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -26,7 +27,7 @@ function Invoke-Ahk([string]$Script, [string[]]$ExtraArgs = @()) {
         Remove-Item -LiteralPath $out,$err -Force -ErrorAction SilentlyContinue
     }
 }
-foreach ($entry in @('EnglishAutocomplete.ahk','ManageDictionary.ahk','tests/fixture.ahk')) {
+foreach ($entry in @('EnglishAutocomplete.ahk','ManageDictionary.ahk','tests/fixture.ahk','tests/ime-fixture.ahk')) {
     $wrapper = Join-Path $root '.syntax-check.ahk'
     try {
         $content = '#Requires AutoHotkey v2.0+' + "`n" + 'SetTimer(() => ExitApp(0), -100)' + "`n" + '#Include "' + (Join-Path $root $entry) + '"'
@@ -38,5 +39,7 @@ foreach ($entry in @('EnglishAutocomplete.ahk','ManageDictionary.ahk','tests/fix
 }
 Write-Output "Temporary syntax wrappers removed=$(!(Test-Path (Join-Path $root '.syntax-check.ahk')))"
 if (Test-Path (Join-Path $root 'tests/core.ahk')) { Invoke-Ahk (Join-Path $root 'tests/core.ahk') }
+if (Test-Path (Join-Path $root 'tests/ime.ahk')) { Invoke-Ahk (Join-Path $root 'tests/ime.ahk') }
 if ($Integration) { Invoke-Ahk (Join-Path $root 'tests/integration.ahk') }
 elseif ($CaseOnly) { Invoke-Ahk -Script (Join-Path $root 'tests/integration.ahk') -ExtraArgs @('--case-only') }
+if ($ImeIntegration) { Invoke-Ahk (Join-Path $root 'tests/ime-integration.ahk') }
