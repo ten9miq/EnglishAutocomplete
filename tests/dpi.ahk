@@ -6,7 +6,7 @@ Checks := 0
 Popup := false
 OnError Fail
 OnExit Cleanup
-Settings := {FontSize: 11, MaxCandidates: 9, ShowTranslation: true, OffsetX: 32, OffsetY: 80}
+Settings := {FontSize: 11, MaxCandidates: 9, ShowTranslation: true, OffsetX: 0, OffsetY: 24}
 Popup := EacSuggestionGui(Settings)
 Popup.Window.Title := "EnglishAutocomplete DPI test"
 Items := []
@@ -20,6 +20,7 @@ try {
         Assert(DllCall("GetObjectW", "Ptr", Popup.NormalFont, "Int", 92, "Ptr", logfont), "native font readable")
         Assert(NumGet(logfont, 0, "Int") = -Round(Settings.FontSize * dpi / 72), "font has exactly one DPI conversion " dpi)
         extent := EacSuggestionGui.Measure(dc, Popup.BoldFont, "▶ 5. configuration 設定・構成 & 表示倍率")
+        TestSpacing(dpi, extent.Height)
         for surface in [{Left: 0, Top: 0, Right: 1920, Bottom: 1040, Dpi: dpi},
             {Left: -1920, Top: -1080, Right: 0, Bottom: 0, Dpi: dpi},
             {Left: 100, Top: 1600, Right: 580, Bottom: 1800, Dpi: dpi}] {
@@ -84,6 +85,14 @@ try {
             Assert(physical && Abs(physical.X - NumGet(rect, 0, "Int") - Round(10*surface.Dpi/sourceDpi)) <= 1
                 && Abs(physical.Y - NumGet(rect, 4, "Int") - Round(10*surface.Dpi/sourceDpi)) <= 1,
                 "caret conversion matches physical window bounds awareness " awareness)
+            info := Buffer(8 + 6 * A_PtrSize + 16, 0)
+            NumPut "Ptr", hwnd, info, 8 + 5 * A_PtrSize
+            NumPut "Int", 10, "Int", 10, "Int", 11, "Int", 30, info, 8 + 6 * A_PtrSize
+            anchor := EacCaretProvider().GetPosition({Hwnd: hwnd, Focus: hwnd, Info: info})
+            Assert(anchor && anchor.Found && anchor.X = physical.X && anchor.Top = physical.Y
+                && anchor.Y = anchor.Bottom
+                && Abs(anchor.Bottom - anchor.Top - Round(20*surface.Dpi/sourceDpi)) <= 1,
+                "native caret retains physical top and bottom awareness " awareness)
         } finally {
             DllCall "DestroyWindow", "Ptr", hwnd
         }
@@ -94,6 +103,41 @@ try {
 Record("PASS dpi_checks=" Checks " monitors=" MonitorGetCount() " AHK=" A_AhkVersion)
 Cleanup()
 ExitApp 0
+
+TestSpacing(dpi, textHeight) {
+    global Settings
+    scale := dpi / 96, gap := Round(Settings.OffsetY * scale)
+    surface := {Left: -1920, Top: -1080, Right: 0, Bottom: 0, Dpi: dpi}
+    for offset in [-20, 0, 20] {
+        horizontal := Settings.Clone(), horizontal.OffsetX := offset
+        for count in [5, 9] {
+            aligned := EacSuggestionGui.Layout(surface, {X: -1000, Y: -800}, 300, textHeight, count, horizontal, 0)
+            Assert(aligned.X + aligned.MarginX + aligned.NumberWidth = -1000 + Round(offset * scale),
+                "candidate text aligns with caret and one scaled horizontal offset " dpi)
+        }
+    }
+    ; Model both native and UIA caret heights, plus a point-only fallback.
+    for caretHeight in [0, Round(16 * scale), Round(40 * scale)] {
+        anchor := {X: -400, Y: -800, Top: -800 - caretHeight, Bottom: -800}
+        below := EacSuggestionGui.Layout(surface, anchor, 300, textHeight, 5, Settings, 0)
+        Assert(below.Y - anchor.Bottom = gap, "below gap measured from caret bottom " dpi)
+        anchor.Y := anchor.Bottom := -1, anchor.Top := -1 - caretHeight
+        above := EacSuggestionGui.Layout(surface, anchor, 300, textHeight, 5, Settings, 0)
+        Assert(anchor.Top - above.Y - above.Height = gap, "above gap measured from caret top " dpi)
+        Assert(above.Y + above.Height < anchor.Top, "above popup clears full caret height " dpi)
+    }
+    fallback := {X: -400, Y: -1}
+    layout := EacSuggestionGui.Layout(surface, fallback, 300, textHeight, 5, Settings, 0)
+    Assert(fallback.Y - layout.Y - layout.Height = gap, "point-only anchor retains configured above gap " dpi)
+    ; Five -> nine rows must grow away from the caret when placed above it.
+    short := EacSuggestionGui.Layout(surface, anchor, 300, textHeight, 5, Settings, 0)
+    tall := EacSuggestionGui.Layout(surface, anchor, 300, textHeight, 9, Settings, 5)
+    Assert(short.Y + short.Height = tall.Y + tall.Height, "expanded popup keeps upper caret clearance " dpi)
+    cramped := {Left: -500, Top: -100, Right: 0, Bottom: 0, Dpi: dpi}
+    clipped := EacSuggestionGui.Layout(cramped, anchor, 300, textHeight, 9, Settings, 9)
+    Assert(clipped.Y >= cramped.Top && clipped.Y + clipped.Height <= cramped.Bottom,
+        "insufficient vertical space clamps popup inside work area " dpi)
+}
 
 Assert(condition, description) {
     global Checks

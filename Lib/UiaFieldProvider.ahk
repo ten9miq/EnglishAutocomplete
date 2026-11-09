@@ -240,7 +240,7 @@ class EacUia {
             && width >= 0 && width <= 100000 && height > 0 && height <= 10000)
             return false
         this.Check()
-        return {Found: true, X: Round(x), Y: Round(y+height), Method: "UIACaret",
+        return {Found: true, X: Round(x), Y: Round(y+height), Top: Round(y), Bottom: Round(y+height), Method: "UIACaret",
             Hwnd: context.Hwnd, Focus: context.Focus, Tick: A_TickCount, Age: 0}
     }
 }

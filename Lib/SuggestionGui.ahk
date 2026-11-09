@@ -153,10 +153,17 @@ class EacSuggestionGui {
         width := Min(workWidth, Max(Round(180 * scale),
             Min(Round(520 * scale), textWidth + 2 * marginX + numberWidth + Round(4 * scale))))
         height := rows * rowHeight + 2 * marginY
-        x := Min(Max(surface.Left, anchor.X + Round(config.OffsetX * scale)), surface.Right - width)
-        y := anchor.Y + Round(config.OffsetY * scale)
+        ; Align the candidate word, leaving its number and padding to the left
+        ; of the caret. Clamp the complete popup at work-area edges.
+        x := Min(Max(surface.Left, anchor.X + Round(config.OffsetX * scale) - marginX - numberWidth), surface.Right - width)
+        ; Anchors use physical coordinates. Measure the same gap from the
+        ; nearest caret edge on either side, rather than from its bottom twice.
+        caretBottom := anchor.HasOwnProp("Bottom") ? anchor.Bottom : anchor.Y
+        caretTop := anchor.HasOwnProp("Top") ? Min(anchor.Top, caretBottom) : caretBottom
+        gap := Round(config.OffsetY * scale)
+        y := caretBottom + gap
         if y + height > surface.Bottom
-            y := anchor.Y - height - Round(12 * scale)
+            y := caretTop - height - gap
         y := Max(surface.Top, Min(y, surface.Bottom - height))
         return {X: x, Y: y, Width: width, Height: height, RowHeight: rowHeight,
             Rows: rows, First: Max(1, Min(count - rows + 1, selected - rows + 1)),

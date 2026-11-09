@@ -274,6 +274,15 @@ TestComHelpers() {
     fixture.HResult := 0, fixture.ExpireDeadline := true
     AssertThrows(() => EacUia.Value(object), "input Value deadline checked after COM call")
     EacUia.Deadline := 0, fixture.ExpireDeadline := false, fixture.VarType := 11
+    fixture.RectValues := [-20.25, -100.5, 1, 25.5]
+    anchor := EacUia.Anchor(object, {Hwnd: 1, Focus: 2})
+    Assert(anchor && anchor.X = Round(-20.25) && anchor.Top = Round(-100.5)
+        && anchor.Bottom = -75 && anchor.Y = anchor.Bottom,
+        "UIA physical caret retains both edges without another DPI conversion")
+    fixture.RectValues := [0, 0, 1, 0]
+    Assert(!EacUia.Anchor(object, {Hwnd: 1, Focus: 2}), "zero-height UIA caret rejected")
+    fixture.RectValues := [0, 0, 1]
+    Assert(!EacUia.Anchor(object, {Hwnd: 1, Focus: 2}), "incomplete UIA caret rectangle rejected")
     fixture.HResult := 0, fixture.IdentityValues := [42, 7, 9]
     Assert(EacUia.Identity(object) == "UIA:42:7:9", "SAFEARRAY runtime identity decoded")
     fixture.IdentityValues := []
@@ -475,6 +484,7 @@ class UiaComStub {
     NullInterface := false
     ExpireDeadline := false
     IdentityValues := []
+    RectValues := []
     __New(kind, owner := false) {
         this.Owner := owner, this.Callbacks := []
         this.Vtable := Buffer(13 * A_PtrSize, 0), this.Instance := Buffer(A_PtrSize, 0)
@@ -485,6 +495,7 @@ class UiaComStub {
         else {
             this.SetSlot(4, "RuntimeId", 2), this.SetSlot(5, "Interface", 2)
             this.SetSlot(9, "Attribute", 3), this.SetSlot(11, "Property", 4), this.SetSlot(12, "Text", 3)
+            this.SetSlot(10, "Bounds", 2)
         }
     }
     SetSlot(slot, method, count) {
@@ -536,6 +547,15 @@ class UiaComStub {
         for value in this.IdentityValues {
             index := A_Index - 1
             DllCall "oleaut32\SafeArrayPutElement", "Ptr", array, "Int*", index, "Int*", value
+        }
+        NumPut "Ptr", array, output
+        return this.HResult
+    }
+    Bounds(pointer, output) {
+        array := DllCall("oleaut32\SafeArrayCreateVector", "UShort", 5, "Int", 0, "UInt", this.RectValues.Length, "Ptr")
+        for value in this.RectValues {
+            index := A_Index - 1
+            DllCall "oleaut32\SafeArrayPutElement", "Ptr", array, "Int*", index, "Double*", value
         }
         NumPut "Ptr", array, output
         return this.HResult

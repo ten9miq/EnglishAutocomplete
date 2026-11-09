@@ -17,10 +17,11 @@ class EacCaretProvider {
         if !caret
             return invalid
         offset := 8 + 6 * A_PtrSize
+        top := EacDpi.CaretToPhysical(caret, NumGet(info, offset, "Int"), NumGet(info, offset + 4, "Int"))
         point := EacDpi.CaretToPhysical(caret, NumGet(info, offset, "Int"), NumGet(info, offset + 12, "Int"))
-        if !point
+        if !top || !point || top.Y > point.Y
             return invalid
-        this.Cache := {Found: true, X: point.X, Y: point.Y,
+        this.Cache := {Found: true, X: point.X, Y: point.Y, Top: top.Y, Bottom: point.Y,
             Method: "GUIThreadCaret", Hwnd: context.Hwnd, Focus: context.Focus,
             Tick: A_TickCount, Age: 0}
         return this.Cache.Clone()

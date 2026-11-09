@@ -19,6 +19,7 @@ FileCopy Root "\settings.default.ini", settingsPath, true
 Settings := EacConfig(Root, settingsPath)
 Assert(Settings.MaxCandidates == 9, "default candidate count")
 Assert(Settings.InitialCandidates == 5, "initial visible count")
+Assert(Settings.OffsetX = 0 && Settings.OffsetY = 24, "default caret spacing")
 StartTime := NowMs()
 Personal := EacUserDictionary(Fixture, 3)
 Assert(Personal.Enabled, "SQLite native Unicode path")
