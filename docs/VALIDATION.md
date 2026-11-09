@@ -212,6 +212,46 @@ Selected=1で初期表示していたため、未選択の予測表示とEnter�
 
 `tools/verify.ps1 -SelectionIntegration`で短時間試験を再現できる。構文と既存core/IME/UIA/サクラ回帰も通過。稼働中だった補完本体だけを/restartして反映する。
 
+## 2026-11-09: 接続済みChrome DevToolsでの入力経路の実測
+
+利用者の指定に従い、`mcp__chrome_devtools`だけで隔離Chromeの専用ページ`http://127.0.0.1:8765/uia-fixture.html`を操作した。`list_pages`/`take_snapshot`で対象を確認し、`select_page(bringToFront=true)`、`click`、`fill`/`fill_form`、`type_text`、`press_key`を使用した。Computer UseとOSキー注入は使用していない。試験後に専用ページの文字列を初期値へ戻し、フォーム送信回数は0のまま。
+
+DOMのkeydown/keyup/beforeinput/input/focusinを記録し、別の短時間AHK監視でOS InputHookの通知件数だけを同時測定した。監視は文字内容を保存せず、本体の既存読み取り専用診断から候補数・選択位置・確定回数・Hook状態を取得した。AHK v2.0.28 x64を確認。sandbox内のAHK起動はDLL再配置エラーとなったため、診断だけを通常Windowsセッションで実行した。
+
+| 試験 | DevToolsでの観測結果 | 補完機能の判定 |
+|---|---|---|
+| inputへ`type_text("confi")` | value=`confi`、DOMの5文字分のkeydown/input/keyupを確認 | 候補表示は不成立。本体Visible=0、Count=0 |
+| inputの`confi`からTab→3 | Tabでtextareaへ移動、空textareaのvalue=`3` | 数字候補確定は不成立。Selected=0、Commits=0 |
+| `confi`入力→Tab→Enter | input=`confi`、移動先の空textarea=`\n` | 選択後Enter確定は不成立。Commits=0 |
+| textareaへ`confi`入力→未選択Enter | textarea=`confi\n`、insertLineBreak | 通常改行はDOM上でPASS。OSキー試験とは別 |
+| textareaへ`fill("fill-route")` | valueを確認、DOMの10文字分のkeydown/input/keyup | OS通知なし。`fill`も本体入力の代替にはならない |
+| 5件→9件展開・9番確定 | 候補が出ないため選択状態に到達できない | NOT_RUN |
+
+DOMキーの`isTrusted=true`は確認したが、OS InputHook通知はkeydown=0、keyup=0、OnChar文字数=0だった。監視側HookInProgress=1、本体Hook=1、本体PID=59300を確認した。ページ内の`document.hasFocus()`はtrueでも、読み取り専用のWin32前面照会は`ShellExperienceHost.exe`であり、Chromeではなかった。`select_page(bringToFront=true)`とページ内clickを行っても、この測定結果だった。
+
+本体はOS InputHookの`OnChar`から入力trackerを更新し、Win32前面・focus・IME・UIAを確認する。この試験経路はDOMに入力できてもOS通知とChromeのWin32前面条件を満たしていない。したがって、今回の候補不表示をChrome互換性の製品障害やUIA/IMEの不具合とは判定できない。本体診断のReasonCode=14（NativeIMEPriority）はキャッシュ値であり、今回Chromeの現在IME状態を表す証拠には使わない。UIAStage=0のままで、当該入力で本体のUIA検証まで進んだ証拠もない。
+
+製品コードや安全条件を変更せず、CDP専用動作も追加していない。ChromeのOSキーによる候補表示・Tab後数字・Enter確定は残課題。以前のnative Edit試験の成功をChrome成功へ読み替えない。Git除外の証拠は`tests/results/chrome-devtools/cdp-events.json`、`candidate-observer.json`、`tab3-observer.json`、`tab-enter-observer.json`、`unselected-enter-observer.json`、`final-observer.json`。製品AHKの変更がないため、成功済みの製品回帰試験は再実行していない。
+
+## 2026-11-09: Chromeへの手入力と読み取り専用診断の照合
+
+上記DevTools入力とは別に、利用者が隔離Chromeの同じ専用localhostフォームを手動で前面にし、IME OFFで入力した。エージェントはChromeの前面化・フォーカス変更・キー送信を行わず、本体の既存数値診断と専用フォームの値・イベントだけを読んだ。Computer Useで停止された操作を別AHKからの送信で迂回していない。これは**手入力による実動作確認**であり、Chromeへの合成OSキー自動試験ではない。
+
+AHK v2.0.28 x64、本体PID 59300、単一本体・応答・Hook=1を確認。本体の停止・再起動や製品コード・設定・安全条件の変更はない。200ms間隔の監視は候補数・選択位置・確定回数・安全判定とChrome前面の真偽だけを記録し、入力文・URL・タイトルを取得しない。フォームの読み取り対象は使い捨て試験欄に限定した。
+
+| 試験 | 利用者の確認 | 診断・フォームでの照合 |
+|---|---|---|
+| `confi`入力で候補表示 | 候補が表示された | 13:53:13 JSTにChrome前面、Visible=1、Selected=0、Reason=OK、Commits=0。最初の確認はplain欄 |
+| Textareaで`confi`→Tab→3 | 3番の候補で確定した | Selected=0→1、Navigating=1、Commits=0→1。欄は`confidence`、末尾位置10、数字3・改行の残留なし |
+| Textareaで`confi`→Tab→Enter | 1番で確定し、改行も入らなかった | 13:57:45にSelected=1、13:57:47にCommits=1→2。置換後10文字、確定時のinsertLineBreakなし。後の利用者による再試行でもCommits=2→3 |
+| Textareaで`confi`→未選択Enter | 確定せず通常どおり改行された | 13:58:18にVisible=1、Selected=0、Navigating=0。13:58:19にinsertLineBreak、欄は`confi\n`で改行1個。Commits=3のまま |
+
+以上4項目はこの専用フォームの手入力試験でPASS。Tab/数字/確定Enterは本体に抑止されるためDOMのkeydownがない場合もある。利用者の操作報告・本体の状態遷移・置換入力を合わせて判定した。DOMの`isTrusted`だけをOS入力の証明にはしていない。
+
+診断Count=9は`Items.Length`（候補総数）であり、実可視行数ではない。初期5行→9行展開、他のWebアプリ・contenteditable・パスワード/readonly等の実入力互換性、Chromeへの合成OSキー自動試験は今回未検証。確定後に1候補で再表示される状態も観測したが、今回の確定・改行試験は成立した。
+
+Git除外の証拠は`tests/results/chrome-devtools/manual-monitor.jsonl`、`manual-tab3-snapshot.json`、`manual-tab-enter-snapshot.json`、`manual-enter-events.json`、`manual-run.md`。今回作成した読み取り監視だけを停止ファイルで終了し、exit 0を確認。本体・Chrome・HTTPサーバー・他のAHK/IMEは操作していない。製品AHKを変更していないため回帰試験は再実行せず、`git diff --check`で文書差分を確認した。
+
 ## 2026-11-09: 候補の上下配置とキャレットからの距離
 
 利用者から「Chrome・サクラでは離れすぎ、Codexの上側表示は近すぎ」と実観測の報告があった。コードを確認すると、下置きは`OffsetY=96`を使う一方、下に収まらない場合の上置きは設定を無視した固定12px相当で、さらにキャレットの下端を基準にしていた。上側で実際に入力行から空く距離は`12px相当−キャレット高`となり、行高によっては重なる非対称な処理だった。

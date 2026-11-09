@@ -27,7 +27,7 @@ ENGの追加は不要。本体はキーボードレイアウトを追加・切�
 
 Chrome/Brave/Edge、Codex等のChromium/Electron入力欄にはUIA専用プロバイダーを使用する。**フォーカス中のEdit要素、パスワードでないこと、編集可能、単一の空選択、入力欄内の本文近傍、キャレット矩形、前面ウィンドウの祖先との一致を確認できた欄だけ**が対象。textareaやcontenteditableも同じ情報を公開すれば扱う。読み取りは直前128文字・直後1文字だけで、全文やValueの一括取得・SetValue・クリップボード操作は行わない。同じウィンドウ内の別欄への移動もruntime identityで区別し、確定前に再照会する。情報が不足する独自Webエディターや文書viewerは停止する。
 
-Chrome/Brave/EdgeとCodexのプロファイルを既定有効・自動学習OFFにしている。Codexデスクトップの`ChatGPT.exe`と`Codex.exe`の両プロセス名を用意する。IME ONはネイティブIMEへ任せる。2026-11-09、Codex実画面で9候補表示・候補選択・Enterでのconfi→confident確定（送信なし）を確認した。その後Spaceの候補操作は廃止し、現在はTab/↑↓で選択する。Chrome156では専用フォームのUIA公開属性を確認済み。
+Chrome/Brave/EdgeとCodexのプロファイルを既定有効・自動学習OFFにしている。Codexデスクトップの`ChatGPT.exe`と`Codex.exe`の両プロセス名を用意する。IME ONはネイティブIMEへ任せる。2026-11-09、Codex実画面で9候補表示・候補選択・Enterでのconfi→confident確定（送信なし）を確認した。その後Spaceの候補操作は廃止し、現在はTab/↑↓で選択する。Chrome156では専用フォームのUIA公開属性を確認済み。後続の利用者による手入力で、Chrome専用localhostフォームの候補表示・Tab後数字・Enter確定・未選択Enterの通常改行を確認した。初期5行→9行の実表示、任意のWebアプリ、合成OSキー自動試験は未確認。対応範囲と残る7項目の進捗は[TODO](docs/TODO.md)に記録する。
 
 rich fieldのDocumentRangeが実際のcaret端点と整合しない場合は、読む範囲がfocused Edit内に構造的に含まれることを検証する。EOFの追加確認で、そのEdit自身のValueだけを上限32767文字で一時参照することがある。ページ全文を読まず、Value全文をログや学習DBには保持しない。
 
@@ -40,7 +40,7 @@ Windows 11の新しいメモ帳の内部コントロールが対応クラスか�
 1. このフォルダをユーザーが書込み可能な場所に置く。
 2. AutoHotkey **v2 x64**を用意する。v1では動かない。
 3. `EnglishAutocomplete.ahk` を実行する。初回に `user/settings.ini` と `user/user.db` を作る。
-4. ENG、IME OFF、または未確定入力を照会できるRichEdit等でIME ON・半角英数にし、`confi`などを入力する。
+4. ENGまたは日本語IME OFFの半角英数で、対応欄に`confi`などを入力する。IME ONでは候補を停止する。
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe" '/restart' '.\EnglishAutocomplete.ahk'
@@ -91,6 +91,8 @@ Windows 11の新しいメモ帳の内部コントロールが対応クラスか�
 ## 個人辞書とデータ管理
 
 トレイの手動登録は即座に有効。CamelCaseは保存する。自動学習は空白・改行・Tabで確定した単語を実テキストと照合した後に行い、キーごとにDBへ書き込まない。補完確定後も実際の挿入を再検証して使用回数を更新する。高速入力中に検証できなかった観測は捨てる。
+
+選択候補の優先表示と未知語の自動登録は実装済み。標準候補にも使用回数1回につき100点（上限5000点）と直近使用の加点を付け、標準辞書の点数と合算する。未知語は`PromotionCount=3`回の確認後に候補へ加える。アプリ別の`Learning=0`では選択時の回数更新も未知語の登録も行わない。Chrome/Brave/Edge/Codexは既定OFF、サクラ/メモ帳は既定ON。今回これらの学習設定は変更していない。
 
 自動学習は2～32文字の保守的な単語に限定し、URL、メール、数字混在、`.`/`-`入り、認証情報を示す接頭辞、長い混合大小文字などを除外する。`php-fpm`、`config.toml`、数字入り技術語は手動登録を使う。機密トークンを文字列の形だけで完全識別することはできないため、機密アプリは除外し、不適切な文章を学習しうるアプリではLearning=0を使う。
 
