@@ -10,7 +10,7 @@ class EacConfig {
             FileCopy root "\settings.default.ini", this.Path
         }
         this.Enabled := this.Int("General", "Enabled", 1, 0, 1)
-        this.MinLength := this.Int("General", "MinLength", 3, 2, 32)
+        this.MinLength := this.Int("General", "MinLength", 2, 2, 32)
         this.MaxCandidates := this.Int("General", "MaxCandidates", 9, 1, 9)
         this.InitialCandidates := Min(this.MaxCandidates, this.Int("General", "InitialCandidates", 5, 1, 9))
         this.FontSize := this.Int("General", "FontSize", 11, 8, 24)

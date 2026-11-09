@@ -17,6 +17,7 @@ for suffix in ["", "-journal", "-wal", "-shm"]
 settingsPath := A_ScriptDir "\results\settings.ini"
 FileCopy Root "\settings.default.ini", settingsPath, true
 Settings := EacConfig(Root, settingsPath)
+Assert(Settings.MinLength == 2, "default minimum prefix length")
 Assert(Settings.MaxCandidates == 9, "default candidate count")
 Assert(Settings.InitialCandidates == 5, "initial visible count")
 Assert(Settings.OffsetX = 0 && Settings.OffsetY = 24, "default caret spacing")
@@ -37,7 +38,10 @@ Assert(!EacUserDictionary.Valid("teacher'", true), "partial apostrophe prefix is
 Assert(!EacSuggestionEngine.ValidPrefix("teacher''"), "repeated apostrophe prefix remains invalid")
 Assert(Engine.Search("CONFI")[1].Norm == Engine.Search("confi")[1].Norm, "case insensitive search")
 Assert(Engine.Search("zzzzzzzzzzzz").Length == 0, "unknown prefix")
-Assert(Engine.Search("co").Length == 0, "minimum length")
+Assert(Engine.Search("c").Length == 0, "one character is below minimum length")
+Assert(Engine.Search("co").Length == Settings.MaxCandidates, "two characters return configured candidate count")
+for item in Engine.Search("co")
+    Assert(SubStr(item.Norm, 1, 2) == "co", "two-character prefix boundary")
 Assert(Engine.Search("xyz@abc").Length == 0, "invalid input")
 for item in Engine.Search("compu")
     Assert(SubStr(item.Norm, 1, 5) == "compu", "prefix boundary")
@@ -156,7 +160,7 @@ Personal.Db.Close()
 Personal := EacUserDictionary(Fixture, 3)
 Engine.Personal := Personal
 Samples := []
-Prefixes := ["con", "confi", "compu", "pro", "the", "un", "sta", "ope", "zzz", "config.t", "absolutelylongunknown"]
+Prefixes := ["co", "th", "pr", "con", "confi", "compu", "pro", "the", "un", "sta", "ope", "zzz", "config.t", "absolutelylongunknown"]
 Loop 1000 {
     prefix := Prefixes[Mod(A_Index - 1, Prefixes.Length) + 1]
     t := NowMs()
