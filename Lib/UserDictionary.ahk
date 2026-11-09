@@ -1,7 +1,7 @@
 #Requires AutoHotkey v2.0+
 
 class EacUserDictionary {
-    __New(path, promotion := 3) {
+    __New(path, promotion := 2) {
         this.Enabled := false
         this.Db := false
         this.Promotion := promotion

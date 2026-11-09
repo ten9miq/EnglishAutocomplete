@@ -18,7 +18,7 @@ class EacConfig {
         this.OffsetY := this.Int("General", "OffsetY", 24, -1000, 1000)
         this.ShowTranslation := this.Int("General", "ShowTranslation", 1, 0, 1)
         this.Learning := this.Int("General", "Learning", 1, 0, 1)
-        this.PromotionCount := this.Int("General", "PromotionCount", 3, 2, 100)
+        this.PromotionCount := this.Int("General", "PromotionCount", 2, 2, 100)
         this.SCOWL := this.Int("General", "SCOWL", 1, 0, 1)
         this.EJDict := this.Int("General", "EJDict", 1, 0, 1)
         this.Debug := this.Int("General", "Debug", 0, 0, 1)
@@ -40,7 +40,7 @@ class EacConfig {
         this.Enter := this.Int("Keys", "Enter", 0, 0, 1)
         this.ImeStyleKeys := this.Int("Keys", "ImeStyle", 1, 0, 1)
         this.DefaultEnabled := this.Int("Applications", "DefaultEnabled", 0, 0, 1)
-        this.DefaultLearning := this.Int("Applications", "DefaultLearning", 0, 0, 1)
+        this.DefaultLearning := this.Int("Applications", "DefaultLearning", 1, 0, 1)
         this.Excluded := "," StrLower(StrReplace(this.Read("Applications", "Excluded", ""), " ", "")) ","
         this.Policies := Map()
     }

@@ -20,8 +20,9 @@ Settings := EacConfig(Root, settingsPath)
 Assert(Settings.MaxCandidates == 9, "default candidate count")
 Assert(Settings.InitialCandidates == 5, "initial visible count")
 Assert(Settings.OffsetX = 0 && Settings.OffsetY = 24, "default caret spacing")
+Assert(Settings.PromotionCount = 2, "unknown words require two verified uses by default")
 StartTime := NowMs()
-Personal := EacUserDictionary(Fixture, 3)
+Personal := EacUserDictionary(Fixture, Settings.PromotionCount)
 Assert(Personal.Enabled, "SQLite native Unicode path")
 LoadStart := NowMs()
 Engine := EacSuggestionEngine(Root "\data\dictionary.db", Settings, Personal)
@@ -47,14 +48,20 @@ Assert(EacSuggestionEngine.ApplyCase("OpenAI", "Ope") == "OpenAI", "proper case 
 Personal.Observe("MyInternalTool")
 Assert(!HasWord(Engine.Search("myi"), "myinternaltool"), "unknown once not promoted")
 Personal.Observe("MyInternalTool")
-Assert(!HasWord(Engine.Search("myi"), "myinternaltool"), "unknown twice not promoted")
-Personal.Observe("MyInternalTool")
-Assert(HasWord(Engine.Search("myi"), "myinternaltool"), "unknown promoted")
+Assert(HasWord(Engine.Search("myi"), "myinternaltool"), "unknown promoted after exactly two uses")
+Personal.Db.Close()
+Personal := EacUserDictionary(Fixture, 3)
+Engine.Personal := Personal
+Assert(!HasWord(Engine.Search("myi"), "myinternaltool"), "existing two-use row hidden at old threshold")
+Personal.Db.Close()
+Personal := EacUserDictionary(Fixture)
+Engine.Personal := Personal
+Assert(HasWord(Engine.Search("myi"), "myinternaltool"), "lower threshold promotes existing two-use row without DB migration")
 Assert(Personal.Db.Query("SELECT word FROM personal WHERE norm='myinternaltool'")[1][1] == "MyInternalTool", "CamelCase preserved")
 Personal.Observe("myinternaltool")
 Assert(Personal.Db.Query("SELECT count(*) FROM personal WHERE norm='myinternaltool'")[1][1] == "1", "normalized duplicates")
 Assert(Personal.Db.Query("SELECT word FROM personal WHERE norm='myinternaltool'")[1][1] == "MyInternalTool", "automatic usage preserves learned canonical case")
-Assert(Personal.Db.Query("SELECT uses FROM personal WHERE norm='myinternaltool'")[1][1] == "4", "usage increments")
+Assert(Personal.Db.Query("SELECT uses FROM personal WHERE norm='myinternaltool'")[1][1] == "3", "usage increments")
 for word in ["OpenAI", "Codex", "getUserInfo", "AutoHotkey", "kubectl", "kustomize", "php-fpm", "config.toml", "snake_case", "Tool2"]
     Assert(Personal.Observe(word, true), "manual technical word " word)
 Assert(HasWord(Engine.Search("config.t"), "config.toml"), "dotted manual completion")
@@ -63,6 +70,9 @@ Personal.Observe("OPENAI")
 Assert(Personal.Db.Query("SELECT word FROM personal WHERE norm='openai'")[1][1] == "OpenAI", "automatic uppercase preserves manual CamelCase")
 Personal.Observe("CONFIDENCE")
 Assert(Engine.Search("confidenc")[1].Word == "confidence", "automatic uppercase does not override static spelling")
+previousScore := Engine.Search("confidenc")[1].Score
+Personal.Observe("confidence")
+Assert(Engine.Search("confidenc")[1].Score = previousScore + 100, "known word usage still increases ranking score")
 for word in ["name@example.com", "https://example.com", "abc123Secret", "password", "Bearer_abc", "token_abc", "config.toml", "php-fpm"]
     Assert(!Personal.Observe(word), "learning excluded " word)
 Personal.Block("OpenAI")
@@ -109,7 +119,19 @@ Assert(!EacFieldGuard.Matches({Before: "Compu", After: ""}, "compu"), "case-only
 Assert(EacFieldGuard.Matches({Before: "computer `r`n", After: ""}, "computer", true), "boundary learning verification")
 Assert(!EacFieldGuard.Matches({Before: "computer", After: ""}, "computer", true), "no boundary no learning")
 Assert(Settings.Policy("excel.exe").Enabled == false, "Excel off by default")
-Assert(Settings.Policy("unknown.exe").Learning == false, "unknown app no learning")
+Assert(!Settings.Policy("unknown.exe").Enabled && Settings.Policy("unknown.exe").Learning, "unknown app learns without candidate display")
+for process in ["notepad.exe", "notepad++.exe", "sakura.exe", "chrome.exe", "brave.exe", "msedge.exe", "chatgpt.exe", "codex.exe"]
+    Assert(Settings.Policy(process).Enabled && Settings.Policy(process).Learning, "default supported app learns " process)
+Assert(!Settings.Policy("keepass.exe").Enabled && !Settings.Policy("keepass.exe").Learning, "excluded app cannot learn")
+IniWrite 0, settingsPath, "app:optout.exe", "Learning"
+Assert(!EacConfig(Root, settingsPath).Policy("optout.exe").Learning, "explicit per-app learning opt-out")
+IniWrite 0, settingsPath, "General", "Learning"
+Assert(!EacConfig(Root, settingsPath).Policy("chrome.exe").Learning, "general learning opt-out overrides enabled profile")
+IniDelete settingsPath, "General", "Learning"
+IniDelete settingsPath, "General", "PromotionCount"
+IniDelete settingsPath, "Applications", "DefaultLearning"
+fallback := EacConfig(Root, settingsPath)
+Assert(fallback.PromotionCount = 2 && fallback.Policy("unknown.exe").Learning, "missing INI keys use new learning defaults")
 Assert(Settings.Policy("notepad.exe").Tab == false, "Tab unchanged default")
 BrokenPath := A_ScriptDir "\results\broken.db"
 if FileExist(BrokenPath)

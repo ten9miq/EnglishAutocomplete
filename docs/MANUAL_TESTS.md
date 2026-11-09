@@ -1,6 +1,6 @@
 # 実アプリ・IME・共存の手動試験
 
-2026-11-08時点では、下表の実アプリ試験は未実施。別プロセスの専用Win32 Edit fixtureによる自動試験と区別する。個人文書ではなく新しい空の試験用文書を使い、最初はLearning=0で確認する。
+下表には実アプリでの未検証項目を含む。別プロセスの専用Win32 Edit fixtureによる自動試験と区別する。個人文書ではなく新しい空の試験用文書を使い、最初はLearning=0で確認する。
 
 ## アプリごとの現版の判断
 
@@ -9,12 +9,12 @@
 | Windowsメモ帳 | 対応クラスのEdit/RichEditの場合に限る | 未検証。バージョンで実装が異なる。confi→候補、通常入力、BS更新、確定直後の入力 |
 | サクラエディタ | 共有データ版182の本文を専用プロバイダーで照会。未知版は停止 | 32bit 2.4.3.7173、IME OFFの半角英数で候補表示・語尾確定、選択/ビューモードでの拒否を確認。64bit未検証 |
 | Notepad++ | Scintilla本文は対象外。native Editダイアログのみ可能性あり | 未検証 |
-| Chrome | UIA Edit/TextPatternと必要な安全情報を取得できるフォーム・textarea・contenteditable。既定有効、学習OFF | Chrome156専用フォームのUIA能力のみ確認。実入力未検証。選択/readonly/password/情報不足では停止すること |
+| Chrome | UIA Edit/TextPatternと必要な安全情報を取得できるフォーム・textarea・contenteditable。既定有効、学習ON | Chrome156専用フォームで利用者の手入力による候補表示・Tab後数字・Enter確定を確認済み。新設定での学習書込みは未検証。選択/readonly/password/情報不足では停止すること |
 | Brave / Edge | Chrome同様 | 実入力未検証 |
-| Codexデスクトップ | ChatGPT.exe/Codex.exeを許可。UIAで編集可能なEdit入力欄だけ対象。学習OFF | 2026-11-09、9候補の選択→Enterでconfi→confident、送信なしを実画面で確認。その後Space操作は廃止 |
-| Excel | セル本文・数式バーへ未対応・既定無効 | 未検証。通常のTab/Enter/Ctrl+Space、セル移動、既存入力が変化しないこと |
-| VS Code | editor/標準補完へ未対応・既定無効 | 未検証。VS Codeの補完・Ctrl+Spaceが変化しないこと |
-| Electron | アプリ許可とUIA Edit/TextPatternの公開が必要 | 未検証。DOMのフォーカスだけが移動しても旧候補を確定しないこと |
+| Codexデスクトップ | ChatGPT.exe/Codex.exeを許可。UIAで編集可能なEdit入力欄だけ対象。学習ON | 2026-11-09、9候補の選択→Enterでconfi→confident、送信なしを実画面で確認。その後Space操作は廃止 |
+| Excel | セル本文・数式バーへ未対応・候補表示は既定無効。対応ダイアログ等は学習のみ有効 | 未検証。通常のTab/Enter/Ctrl+Space、セル移動、既存入力が変化しないこと |
+| VS Code | editor/標準補完へ未対応・候補表示は既定無効。安全に確認できる対応欄は学習のみ有効 | 未検証。VS Codeの補完・Ctrl+Spaceが変化しないこと |
+| Electron | 候補表示にはアプリ許可が必要。学習は既定ON。どちらもUIA Edit/TextPattern等の安全情報の公開が必要 | 未検証。DOMのフォーカスだけが移動しても旧候補を確定しないこと |
 | Google Docs/Sheets/Slides/Gmail | Web独自入力欄へ未対応 | 未検証。補完を停止し既存操作を維持すること |
 
 ## IME別マトリクス
@@ -65,11 +65,11 @@
 
 ## 学習と安全
 
-- 試験用にLearning=1へ変更し再読込。未知語`MyInternalTool`を空白区切りで3回手入力し、1～2回では個人候補にならず、3回後に候補になること。
+- 試験用にLearning=1へ変更し再読込。未知語`MyInternalTool`を空白区切りで2回手入力し、1回では個人候補にならず、2回後に候補になること。既存DBの2回履歴も再読込後に候補になること。
 - 手動登録した`config.toml`/`php-fpm`/`Tool2`は即候補になること。自動学習ではこれらを登録しないこと。
-- 学習ONの安全な試験欄で、候補選択を繰り返すと使用回数と最終使用日時が増え、優先度に反映されること。Chrome/Codex等のLearning=0では選択してもDBに回数が追加されないこと。
+- 学習ONの安全な試験欄で、候補選択を繰り返すと使用回数と最終使用日時が増え、優先度に反映されること。Chrome/Codexも既定Learning=1で同様に学習すること。明示的にLearning=0へ設定したアプリでは回数が追加されないこと。
 - 再起動後も表記・回数が残ること。禁止語は標準辞書候補からも消え、delete後は再登録可能であること。
-- パスワード欄、除外アプリ、未知アプリ、Learning=0でDBに単語が増えないこと。メール・URL・テスト用の認証文字列が入らないこと。本物のパスワードやトークンでは試さない。
+- 未登録アプリやEnabled=0でもLearning=1なら安全な対応欄で学習し、候補表示・キー横取りはしないこと。Tabがフォーカスを移した場合、その語は学習しないこと。パスワード欄、readonly、除外アプリ、未対応欄、Learning=0ではDBに単語が増えないこと。メール・URL・テスト用の認証文字列が入らないこと。本物のパスワードやトークンでは試さない。
 - 入力欄判定が不明な時に機能が止まること。文書の全文やキー履歴がstatus.log等へ残らないこと。
 - DBの書込不可/ロック/破損では学習が止まり本体がクラッシュしないこと。実データではなくバックアップした試験DBで行う。
 
@@ -95,7 +95,7 @@
 
 ## UIA入力欄の追加試験
 
-- `tests/uia-fixture.html`の通常input・textarea・role=textboxのcontenteditableで、IME OFFの`confi`から候補表示・選択・語尾追加を確認する。ブラウザー・チャットのLearning=0を維持する。
+- `tests/uia-fixture.html`の通常input・textarea・role=textboxのcontenteditableで、IME OFFの`confi`から候補表示・選択・語尾追加を確認する。初回のキー試験ではLearning=0にし、別の学習試験で既定Learning=1へ戻して未知語2回・既知語の回数更新を確認する。
 - password・readonly・disabled・選択範囲・キャレット不明・TextPattern/readonly属性非対応では停止すること。Documentやページ本文全体を入力欄と扱わないこと。
 - 同じrenderer HWND内の別欄へクリック/Tab/JavaScriptで移動し、文字が同じ欄でも前の候補が新しい欄へ確定されないこと。行内移動・自動書換え・DOM再生成・タブ移動も確認する。
 - UIA照会中のIME ON切替、フォーカス変更、入力割込みでは確定を中止すること。変換モードEnterで改行/送信を同時に実行せず、選択前Enterは入力先へ渡すこと。

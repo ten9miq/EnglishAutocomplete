@@ -10,6 +10,7 @@ if FileExist(ResultFile)
     FileDelete ResultFile
 Checks := 0
 CaseOnly := A_Args.Length && A_Args[1] == "--case-only"
+LearningOnly := A_Args.Length && A_Args[1] == "--learning-only"
 PreviousWindow := WinExist("A")
 PreviousLayout := DllCall("GetKeyboardLayout", "UInt", 0, "Ptr")
 FixtureGui := false
@@ -18,8 +19,10 @@ OnError Fail
 OnExit Cleanup
 Path := A_ScriptDir "\results\integration-settings.ini"
 FileCopy Root "\settings.default.ini", Path, true
-IniWrite 1, Path, "app:AutoHotkey64.exe", "Enabled"
-IniWrite 1, Path, "app:AutoHotkey64.exe", "Learning"
+if !LearningOnly {
+    IniWrite 1, Path, "app:AutoHotkey64.exe", "Enabled"
+    IniWrite 1, Path, "app:AutoHotkey64.exe", "Learning"
+}
 TestDirectory := A_ScriptDir "\results\integration-user-" DllCall("GetCurrentProcessId", "UInt")
 IniWrite TestDirectory, Path, "General", "DataDirectory"
 Settings := EacConfig(Root, Path)
@@ -45,6 +48,12 @@ context := EacFieldGuard.Context()
 Assert(context && context.Focus == TestEdit.Hwnd, "native focus context")
 Assert(App.Ime.GetState(context).Allowed, "ENG layout allowed (real OS query)")
 Assert(EacFieldGuard.Read(context), "native editable safety")
+if LearningOnly {
+    RunLearningTests()
+    Record("PASS learning_checks=" Checks " AHK=" A_AhkVersion)
+    Cleanup()
+    ExitApp 0
+}
 if CaseOnly {
     RunCaseTests()
     Record("PASS exact_case_checks=" Checks " AHK=" A_AhkVersion)
@@ -247,6 +256,68 @@ RunCaseTests() {
         Record("STAGE exact case passed: " casePair[2])
     }
     SetKeyDelay 18, 10
+}
+
+RunLearningTests() {
+    global App, Settings, TestEdit, Password, ReadOnlyEdit
+    policy := Settings.Policy("AutoHotkey64.exe")
+    Assert(!policy.Enabled && policy.Learning, "unregistered app defaults to learning only")
+    Prepare()
+    TypeFixture("LearnFixtureWord ")
+    Assert(App.User.Db.Query("SELECT uses FROM personal WHERE norm='learnfixtureword'")[1][1] == "1", "real InputHook boundary learns first use in unknown app")
+    Assert(!HasLearnedCandidate("learnfixtureword"), "first use does not promote unknown word")
+    Prepare()
+    TypeFixture("LearnFixtureWord ")
+    Assert(App.User.Db.Query("SELECT uses FROM personal WHERE norm='learnfixtureword'")[1][1] == "2", "second real boundary increments once")
+    Assert(HasLearnedCandidate("learnfixtureword"), "second verified use promotes unknown word")
+    Prepare()
+    TypeFixture("confi")
+    Assert(!App.Visible && !App.Items.Length && !App.Target, "learning-only app never creates candidates")
+    for binding in App.KeyBindings
+        Assert(!App.CanIntercept(binding), "learning-only app passes candidate key " binding.Key)
+    Assert(!App.Commit(), "learning-only app cannot commit")
+    Prepare()
+    TypeFixture("TabFixtureWord")
+    SendFixture "{Tab}"
+    Sleep 120
+    Assert(EacFieldGuard.Context().Focus = Password.Hwnd, "learning-only Tab keeps native focus navigation")
+    Assert(App.User.Db.Query("SELECT count(*) FROM personal WHERE norm='tabfixtureword'")[1][1] == "0", "focus-changing boundary is not learned")
+    SendFixture "sensitiveFixtureWord "
+    Sleep 120
+    Assert(!App.Snapshot() && App.User.Db.Query("SELECT count(*) FROM personal WHERE norm='sensitivefixtureword'")[1][1] == "0", "password field remains excluded with app learning on")
+    ReadOnlyEdit.Focus()
+    Assert(!App.Snapshot(), "readonly field remains excluded with app learning on")
+    policy.Learning := false
+    Prepare()
+    TypeFixture("OptoutFixtureWord ")
+    Assert(App.User.Db.Query("SELECT count(*) FROM personal WHERE norm='optoutfixtureword'")[1][1] == "0", "per-app learning opt-out stops learning")
+    policy.Learning := true
+    Settings.Enabled := false
+    Prepare()
+    TypeFixture("DisabledFixtureWord ")
+    Assert(App.User.Db.Query("SELECT count(*) FROM personal WHERE norm='disabledfixtureword'")[1][1] == "0", "global disable stops learning-only app")
+    Settings.Enabled := true
+    policy.Enabled := true
+    Prepare()
+    TypeFixture("confi")
+    Assert(App.Visible, "enabling completion restores candidate display")
+    expected := App.Items[1].Word
+    App.Selected := 1
+    Assert(App.Commit(), "enabled app can commit selected word")
+    Sleep 120
+    Assert(App.User.Db.Query("SELECT uses FROM personal WHERE norm=?", [StrLower(expected)])[1][1] == "1", "verified completion updates known word usage")
+    App.Ime.NativePriority := true
+    Prepare()
+    TypeFixture("name@example.com ")
+    Assert(App.User.Db.Query("SELECT count(*) FROM personal WHERE norm LIKE '%example%'")[1][1] == "0", "email remains excluded")
+}
+
+HasLearnedCandidate(norm) {
+    global App
+    for item in App.Engine.Search("learnf")
+        if item.Norm == norm
+            return true
+    return false
 }
 
 Prepare() {

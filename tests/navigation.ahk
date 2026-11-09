@@ -140,7 +140,7 @@ class NavigationApp extends EacApplication {
         this.Pending := []
         this.Items := [1,2,3,4,5,6,7,8,9]
         this.Target := {Context: {Key: "test"}, Ime: {Key: "test"}, Field: {Before: "confi", After: ""},
-            Policy: {Keys: true, Tab: false, Enter: false, ImeStyleKeys: true}}
+            Policy: {Enabled: true, Keys: true, Tab: false, Enter: false, ImeStyleKeys: true}}
     }
     Snapshot() => this.Allowed ? this.Target : false
     CurrentContext() => this.Target.Context

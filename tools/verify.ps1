@@ -2,6 +2,7 @@ param(
     [string]$Ahk = "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe",
     [switch]$Integration,
     [switch]$CaseOnly,
+    [switch]$LearningOnly,
     [switch]$ImeIntegration,
     [switch]$Dpi,
     [switch]$SelectionIntegration
@@ -47,6 +48,7 @@ if (Test-Path (Join-Path $root 'tests/uia.ahk')) { Invoke-Ahk (Join-Path $root '
 if (Test-Path (Join-Path $root 'tests/sakura.ahk')) { Invoke-Ahk (Join-Path $root 'tests/sakura.ahk') }
 if ($Integration) { Invoke-Ahk (Join-Path $root 'tests/integration.ahk') }
 elseif ($CaseOnly) { Invoke-Ahk -Script (Join-Path $root 'tests/integration.ahk') -ExtraArgs @('--case-only') }
+elseif ($LearningOnly) { Invoke-Ahk -Script (Join-Path $root 'tests/integration.ahk') -ExtraArgs @('--learning-only') }
 if ($ImeIntegration) { Invoke-Ahk (Join-Path $root 'tests/ime-integration.ahk') }
 if ($Dpi) { Invoke-Ahk (Join-Path $root 'tests/dpi.ahk') }
 if ($SelectionIntegration) { Invoke-Ahk (Join-Path $root 'tests/selection-integration.ahk') }

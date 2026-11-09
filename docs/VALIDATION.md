@@ -272,3 +272,20 @@ Win32のGUIThreadInfo、既存UIAのキャレット矩形とも、物理ピク�
 - 各100～300%で、OffsetX=-20/0/20の一度だけのDPI換算、候補文字開始とキャレットの一致、5/9行での横位置維持を追加検証。既存の上下余白・キャレット高・負座標・画面端・狭い作業領域の試験、実4モニター全150%の非アクティブ配置も通過した。Chromeへの前面化・キー送信・フォーカス変更は行っていない。
 - 開始時に稼働していた本体PID 59216だけを`/restart`し、新PID 16500の対象CommandLine、単一プロセス、WM_NULL応答、InputHook=1、2秒後生存、他AHK 10プロセスの維持を確認。Git除外の`tests/results/candidate-spacing/restart-horizontal.json`に記録した。
 - README・手動試験表・TODOを更新し、`git diff --check`はPASS。横位置修正後も利用者から「おおむねちょうどよい」と回答があり、縦・横とも実際の距離感の調整を完了した。この確認は利用者による目視評価であり、エージェントの画面取得やキー送信は行っていない。アプリ別のIME候補との厳密な座標比較や実混在DPIのモニター移動は未実施。
+
+## アプリ名に依らない自動学習・未知語2回（2026-11-09）
+
+利用者の追加依頼により、候補表示の`Enabled`と自動学習の`Learning`を分離した。既定は`DefaultEnabled=0`、`DefaultLearning=1`。Chrome/Brave/Edge/ChatGPT.exe/Codex.exeを含む全標準プロファイルのLearningを1とし、補完無効・未登録アプリも安全な対応欄なら学習だけ行う。Snapshotは両方OFFのとき停止し、学習だけの場合は実テキスト検証後に観測を記録して候補検索・表示を行わず戻る。候補キーとCommitにはEnabledを必須にした。Excludedは両方OFFを優先する。
+
+`PromotionCount`とINI欠落時・個人辞書コンストラクターの既定値を2へ統一。`user/settings.ini`にもLearning設定と2回閾値を反映した。個人DBの削除・再生成・手動編集は行わず、既存の2回以上の未知語履歴は設定反映後に候補へ昇格する。
+
+`tools/verify.ps1 -Ahk "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe" -LearningOnly`を実行し、AHK v2.0.28 x64で以下をすべてPASS、終了コード0と確認した。
+
+- 絶対パス一時Include構文4入口。短時間ExitApp、`/ErrorStdOut`、finallyでラッパー削除。
+- core 102項目：1回では非候補・2回で候補、旧3回閾値のDBを2回既定で開き直した際の昇格、既知語の順位加点、各標準アプリ・未登録アプリの学習既定、除外・明示opt-out・全体Learning OFF・INI欠落時fallbackなど。
+- IME 56・navigation 92・UIA 372・サクラprotocol 27項目の既存回帰。
+- 学習専用integration 55項目：別プロセスの使い捨てWin32 Editへ実SendLevel 1キーを送信し、実InputHookと本体Snapshot/Refreshを使用。未登録アプリで語境界1回/2回の記録と候補化、候補非表示・全候補キーの非介入・Commit拒否、通常Tabによるフォーカス移動と未検証語の非学習、パスワード拒否・readonly拒否・アプリ学習OFF・全体無効の学習停止、補完を有効に戻した後の候補確定と使用回数更新、メール拒否を確認。個人DBとは別のfixture DBを使い、終了時に削除した。
+
+実入力試験で個人DBに試験語が入らないよう、開始時に稼働中だったEnglishAutocomplete本体PID 16500だけを一時停止。試験後に`/restart /ErrorStdOut`でPID 55736として復帰し、対象CommandLine・単一プロセス・WM_NULL応答・InputHook稼働・2秒後生存を確認した。他の10本のAHKのPIDを維持し、IMEを終了・再起動していない。証拠はGit除外の`tests/results/learning-change/verify.txt`、`restart.json`。
+
+今回の新しい学習設定についてChrome/Codexの実入力・実DB書込みは再試験していない。自動試験の入力欄は専用Win32 Editであり、UIA安全条件は既存のheadless回帰で検証した。未対応の独自入力欄、パスワード、readonly、選択範囲、IME ON/状態不明、フォーカス不一致・実テキスト不一致は引き続き対象外。README・手動試験表・設計書を更新した。commit/pushは行っていない。

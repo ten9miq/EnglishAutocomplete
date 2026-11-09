@@ -200,7 +200,8 @@ class EacApplication {
         try policy := this.Config.Policy(WinGetProcessName("ahk_id " context.Hwnd))
         catch
             return false
-        if !policy.Enabled
+        ; Learning is independent of candidate display, including unknown apps.
+        if !policy.Enabled && !policy.Learning
             return false
         ime := this.Ime.GetState(context)
         if !ime.Allowed {
@@ -304,6 +305,11 @@ class EacApplication {
                     this.User.Observe(RTrim(observation.Word, ".,!?;:"))
             }
             this.Pending := []
+            if !snapshot.Policy.Enabled {
+                this.Hide()
+                this.Items := [], this.Target := false
+                return ; validated learning only: no search, popup or key capture
+            }
             prefix := this.Tracker.Word
             if prefix != "" && !EacFieldGuard.Matches(snapshot.Field, prefix) {
                 this.Hide()
@@ -400,7 +406,7 @@ class EacApplication {
     }
 
     BindingPermitted(binding) {
-        if !this.Target || !this.Config.Enabled || !this.Target.Policy.Keys
+        if !this.Target || !this.Config.Enabled || !this.Target.Policy.Enabled || !this.Target.Policy.Keys
             return false
         policy := this.Target.Policy
         if binding.StyleOnly && !policy.ImeStyleKeys
@@ -496,7 +502,7 @@ class EacApplication {
         generation := this.Tracker.Generation
         snapshot := this.Snapshot()
         prefix := this.Tracker.Word
-        if !snapshot || !this.Target || snapshot.Context.Key != this.Target.Context.Key
+        if !snapshot || !snapshot.Policy.Enabled || !this.Target || snapshot.Context.Key != this.Target.Context.Key
             || snapshot.Ime.Key != this.Target.Ime.Key || !EacFieldGuard.Matches(snapshot.Field, prefix)
             || !EacFieldGuard.SameTarget(snapshot.Field, this.Target.Field)
             || (snapshot.Field.HasOwnProp("Identity") && !EacFieldGuard.SamePosition(snapshot.Field, this.Target.Field))

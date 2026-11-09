@@ -70,7 +70,7 @@ TextPatternの単一collapsed選択を使用し、選択と左右の近傍がそ
 
 UIA runtime identity・collapsed rangeのendpointで同じHWND内の入力欄と位置を区別する。本文と位置の再照合後、最後にfresh focused要素/HasKeyboardFocusを確認する。UIAキャレット矩形がなければ停止し、共有renderer HWNDのWin32キャレットへ推測しない。Snapshot読取り後にもIMEを再照会し、Commitはさらにフォーカス・IME・入力世代を送信直前に確認する。外部アプリの状態とキー送信を原子的に固定する方式ではない。
 
-アプリ既定許可はChrome/Brave/EdgeとChatGPT.exe/Codex.exe。Webやチャットの自動学習はOFF。入力欄へSetValue/Select/Focusを呼ばず、UIA本文全文やValueを一括取得せず、クリップボードにも依存しない。未知の文書型や独自エディターの強制許可は設けない。
+アプリ既定許可はChrome/Brave/EdgeとChatGPT.exe/Codex.exe。自動学習はアプリ名に依らず既定ON。候補表示のEnabledとは独立し、未知アプリやEnabled=0でもLearning=1なら同じ安全判定を通った欄だけ学習する。Excludedは両方OFF。Refreshは検証済み観測を処理した後、Enabled=0なら検索・表示を行わず戻る。未知語の既定閾値は2回。入力欄へSetValue/Select/Focusを呼ばず、UIA本文全文やValueを一括取得せず、クリップボードにも依存しない。未知の文書型や独自エディターの強制許可は設けない。
 
 ### rich fieldの端点不整合に対する追加経路
 
