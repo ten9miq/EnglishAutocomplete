@@ -11,7 +11,7 @@ class EacSuggestionEngine {
 
     Search(prefix) {
         prefix := StrLower(prefix)
-        if StrLen(prefix) < this.Config.MinLength || !EacUserDictionary.Valid(prefix, true)
+        if StrLen(prefix) < this.Config.MinLength || !EacSuggestionEngine.ValidPrefix(prefix)
             return []
         pool := Map(), blocked := Map()
         ; At most 12 static rows per source; never scan a prefix range of words.
@@ -66,4 +66,7 @@ class EacSuggestionEngine {
             return StrUpper(SubStr(word, 1, 1)) SubStr(word, 2)
         return word
     }
+
+    static ValidPrefix(prefix) => EacUserDictionary.Valid(prefix, true)
+        || (StrLen(prefix) <= 64 && SubStr(prefix, -1) = "'" && EacUserDictionary.Valid(SubStr(prefix, 1, -1), true))
 }

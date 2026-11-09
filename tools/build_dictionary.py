@@ -22,6 +22,14 @@ SOURCES = {
 TOP = 12
 WORD = re.compile(r"[A-Za-z][A-Za-z0-9_]*(?:['.-][A-Za-z0-9_]+)*\Z")
 PHRASE = re.compile(r"[A-Za-z][A-Za-z0-9_' .-]{2,95}\Z")
+# These can be contractions even when SCOWL has no translation for them.
+CONTRACTIONS_S = frozenset(("it's", "he's", "she's", "that's", "what's", "there's",
+                            "here's", "how's", "where's", "when's", "why's", "who's", "let's"))
+
+
+def redundant_possessive(norm, entries):
+    return (norm.endswith("'s") and norm not in CONTRACTIONS_S
+            and norm[:-2] in entries and not entries[norm][3])
 
 
 def normalize(word):
@@ -144,6 +152,10 @@ def compile_dictionary(paths, output, size=60):
         prefixes = {}
         for ident, norm, source, score in sorted(ranked, key=lambda r: (-r[3], r[1])):
             for length in range(2, len(norm)):
+                # Preserve dictionary data and explicit apostrophe completion,
+                # but keep generated possessives out of ordinary shortlists.
+                if redundant_possessive(norm, entries) and length <= len(norm) - 2:
+                    continue
                 for kind in (1, 2):
                     if source & kind:
                         ids = prefixes.setdefault((norm[:length], kind), [])
@@ -158,6 +170,7 @@ def compile_dictionary(paths, output, size=60):
                     "phrase_count": str(len(phrases)), "prefix_rows": str(len(prefixes)),
                     "sources": json.dumps(SOURCES, sort_keys=True),
                     "frequency": "EJDict CC0 100/850/2000 tiers; SCOWL level"}
+        metadata["possessives"] = "untranslated base+'s excluded until apostrophe; contractions retained"
         con.executemany("INSERT INTO metadata VALUES (?,?)", sorted(metadata.items()))
         con.commit()
         con.execute("VACUUM")

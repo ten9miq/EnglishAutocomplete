@@ -70,6 +70,16 @@ class DictionaryTests(unittest.TestCase):
         self.assertEqual(search(self.db, "zzzzzzzzzzzz"), [])
         self.assertEqual(search(self.db, ""), [])
 
+    def test_possessive_noise_and_contractions(self):
+        self.assertIsNotNone(self.db.execute("SELECT norm FROM words WHERE norm=?", ("teacher's",)).fetchone())
+        self.assertNotIn("teacher's", [r[0] for r in search(self.db, "teacher")])
+        self.assertIn("teacher's", [r[0] for r in search(self.db, "teacher'")])
+        entries = {"it": ["it", 1, 10, "", 0], "it's": ["it's", 1, 10, "", 0],
+                   "teacher": ["teacher", 1, 10, "", 0], "teacher's": ["teacher's", 1, 10, "", 0]}
+        self.assertFalse(builder.redundant_possessive("it's", entries))
+        self.assertTrue(builder.redundant_possessive("teacher's", entries))
+        self.assertIn("it's", [r[0] for r in search(self.db, "it'")])
+
     def test_ranking_and_frequency_missing(self):
         for prefix in ("con", "the", "compu"):
             rows = search(self.db, prefix)

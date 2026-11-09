@@ -308,7 +308,7 @@ class EacApplication {
                 ; event/boundary; never display or commit an unmatched token.
                 return
             }
-            if StrLen(prefix) < this.Config.MinLength || !EacUserDictionary.Valid(prefix, true) {
+            if StrLen(prefix) < this.Config.MinLength || !EacSuggestionEngine.ValidPrefix(prefix) {
                 this.Hide()
                 return
             }
