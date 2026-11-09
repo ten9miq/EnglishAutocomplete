@@ -249,6 +249,7 @@ class EacUiaFieldProvider {
     static Busy := false
     static Api := EacUia
     static Stage := 0
+    static LastControlType := 0
     static BoundsStart := 0
     static BoundsEnd := 0
     static BoundsFlags := 0
@@ -263,14 +264,15 @@ class EacUiaFieldProvider {
             client := api.Client()
             this.Stage := 2
             element := api.Out(client, 8)
-            type := api.Property(element, 30003, 3)
-            ; A whole document can contain editable children without itself
-            ; being an input. Require the focused Edit semantic, not a viewer.
-            if type != 50004
+            type := this.LastControlType := api.Property(element, 30003, 3)
+            ; Require an Edit or explicitly writable ComboBox, never a viewer.
+            if (type != 50004 && type != 50003)
                 || !api.Property(element, 30008, 11) || !api.Property(element, 30009, 11)
                 || !api.Property(element, 30010, 11) || api.Property(element, 30019, 11)
                 || api.Property(element, 30022, 11)
                 return EacFieldGuard.Reject("UIAUnsafeField")
+            if type = 50003 && api.Property(element, 30046, 11)
+                return EacFieldGuard.Reject("UIAReadOnlyOrRange")
             this.Stage := 3
             if !api.AncestorMatches(element, context)
                 return EacFieldGuard.Reject("UIAWindowMismatch")
@@ -290,7 +292,7 @@ class EacUiaFieldProvider {
             this.BoundsEnd := api.Compare(selection, 1, document, 1)
             this.BoundsFlags := api.Compare(document, 0, document, 1) = 0 ? 1 : 0
             structural := false, eofValue := false
-            if this.BoundsStart < 0 || this.BoundsEnd > 0 {
+            if type = 50003 || this.BoundsStart < 0 || this.BoundsEnd > 0 {
                 try {
                     owner := api.Out(selection, 11)
                     docOwner := api.Out(document, 11)
@@ -353,6 +355,8 @@ class EacUiaFieldProvider {
             this.Stage := 12
             current := api.Out(client, 8)
             if !api.Same(element, current) || !api.Property(element, 30008, 11)
+                || api.Property(element, 30003, 3) != type
+                || (type = 50003 && api.Property(element, 30046, 11))
                 return EacFieldGuard.Reject("FocusChanged")
             this.Stage := 13
             native := api.Context()
@@ -391,7 +395,10 @@ class EacUiaFieldProvider {
         try {
             api.Begin()
             current := api.Out(api.Client(), 8)
-            if !api.Same(field.Element, current) || !api.Property(current, 30008, 11)
+            type := api.Property(current, 30003, 3)
+            if (type != 50004 && type != 50003)
+                || (type = 50003 && api.Property(current, 30046, 11))
+                || !api.Same(field.Element, current) || !api.Property(current, 30008, 11)
                 || api.Property(current, 30019, 11) || !api.Property(current, 30010, 11)
                 || api.Property(current, 30022, 11)
                 return false

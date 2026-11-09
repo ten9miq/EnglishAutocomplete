@@ -23,6 +23,8 @@ if !LearningOnly {
     IniWrite 1, Path, "app:AutoHotkey64.exe", "Enabled"
     IniWrite 1, Path, "app:AutoHotkey64.exe", "Learning"
 }
+else
+    IniWrite 0, Path, "Applications", "DefaultEnabled"
 TestDirectory := A_ScriptDir "\results\integration-user-" DllCall("GetCurrentProcessId", "UInt")
 IniWrite TestDirectory, Path, "General", "DataDirectory"
 Settings := EacConfig(Root, Path)
@@ -261,7 +263,7 @@ RunCaseTests() {
 RunLearningTests() {
     global App, Settings, TestEdit, Password, ReadOnlyEdit
     policy := Settings.Policy("AutoHotkey64.exe")
-    Assert(!policy.Enabled && policy.Learning, "unregistered app defaults to learning only")
+    Assert(!policy.Enabled && policy.Learning, "explicit default completion opt-out preserves learning-only mode")
     Prepare()
     TypeFixture("LearnFixtureWord ")
     Assert(App.User.Db.Query("SELECT uses FROM personal WHERE norm='learnfixtureword'")[1][1] == "1", "real InputHook boundary learns first use in unknown app")

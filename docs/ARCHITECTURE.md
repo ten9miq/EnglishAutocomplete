@@ -13,6 +13,12 @@ freshness: version-sensitive
 
 この文書は元のAutoHotkeyプロジェクトでの調査・設計判断を移したもの。IME表示スクリプトは外部の任意の共存相手であり、本プロジェクトの実行依存ではない。
 
+## 2026-11-09追加: アプリ名から入力欄の能力へ
+
+現版は候補表示・学習を未登録アプリでも既定ONとする。native Edit/RichEditとサクラ専用経路を先に選び、それ以外のクラスはChromium限定を外してUIAへ渡す。native経路でpassword/readonly等を拒否した結果をUIAで再許可することはない。Excluded・アプリ別の明示OFFも優先する。後述の初期MVPのクラス制限は設計履歴であり、現行範囲はREADMEを正本とする。
+
+Google検索欄はBrave実機でfocused ComboBox（50003）、ValueIsReadOnly=false、空選択・編集可能rangeとして公開された。Edit限定による拒否を解消するため、Editまたは編集可能ComboBoxを受け付ける。ComboBoxでは必ず入力欄内の構造的包含を確認した範囲だけを読み、EOFはその欄のValueとの照合で証明する。type/readonlyは最後のfocus照会時にも再確認する。リスト専用ComboBoxは引き続き拒否する。UIAから取得する情報が不足する独自エディターに対する推測や強制有効化は追加しない。
+
 ## 判断
 
 既存IMEインジケーターと新規英文補完を統合せず、補完側は候補表示時だけGUIThreadInfoで位置を取得する(C案)。既存側はCaretGetPos/MSAA/UIA等を組み合わせるが、新規側がUIAv2を追加で読み込まなければUIA/IA2の重複探索は発生しない。共通ライブラリをIncludeするだけではプロセス間のキャッシュは共有されない。将来拡張するなら既存表示からフォーカス識別子・世代・鮮度を含むIPC配信(B案)を検討する。

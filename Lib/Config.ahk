@@ -39,7 +39,7 @@ class EacConfig {
         this.Tab := this.Int("Keys", "Tab", 0, 0, 1)
         this.Enter := this.Int("Keys", "Enter", 0, 0, 1)
         this.ImeStyleKeys := this.Int("Keys", "ImeStyle", 1, 0, 1)
-        this.DefaultEnabled := this.Int("Applications", "DefaultEnabled", 0, 0, 1)
+        this.DefaultEnabled := this.Int("Applications", "DefaultEnabled", 1, 0, 1)
         this.DefaultLearning := this.Int("Applications", "DefaultLearning", 1, 0, 1)
         this.Excluded := "," StrLower(StrReplace(this.Read("Applications", "Excluded", ""), " ", "")) ","
         this.Policies := Map()

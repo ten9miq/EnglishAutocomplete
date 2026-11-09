@@ -715,6 +715,8 @@ class EacApplication {
             return EacUiaFieldProvider.BoundsEnd
         if query = 6
             return EacUiaFieldProvider.BoundsFlags
+        if query = 7
+            return EacUiaFieldProvider.LastControlType
         reasons := ["OK", "Disabled", "NoContext", "UnknownField", "UIAUnsafeField",
             "UIAWindowMismatch", "UIAReadOnlyOrRange", "UIARange", "UIATextUnit",
             "UIACaretUnavailable", "TextChanged", "FocusChanged", "UIAUnavailable",

@@ -33,11 +33,12 @@ class EacFieldGuard {
             cls := WinGetClass("ahk_id " context.Focus)
             if cls = "SakuraView182"
                 return EacSakuraFieldProvider.Read(context)
-            if RegExMatch(cls, "^Chrome_(?:WidgetWin_\d+|RenderWidgetHostHWND)$")
-                return EacUiaFieldProvider.Read(context)
-            ; No Chromium renderer/Scintilla/document guessing or unsafe opt-in.
+            ; App/window class names do not establish text-field safety. Other
+            ; frameworks may publish the same verifiable UIA Edit contract.
+            ; Keep native controls on their stricter native path: a rejected
+            ; password/readonly Edit must never fall through to another provider.
             if !RegExMatch(cls, "i)^(?:Edit|RichEdit(?:20[AW]|50[AW]|D2DPT)?)$")
-                return false
+                return EacUiaFieldProvider.Read(context)
             style := WinGetStyle("ahk_id " context.Focus)
             if style & 0x820 ; ES_PASSWORD or ES_READONLY
                 return false

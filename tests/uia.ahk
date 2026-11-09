@@ -2,7 +2,7 @@
 #SingleInstance Off
 #Include ..\Lib\All.ahk
 
-; Headless tests only. No UIA client, GUI, focus change, or input is created.
+; No external UIA client, visible GUI, focus change, or input is created.
 ; The backend models character offsets independently of provider control flow.
 Checks := 0
 OnError Fail
@@ -10,6 +10,8 @@ EacUiaFieldProvider.Api := UiaTestApi
 try {
     TestRead()
     TestStructuralRead()
+    TestComboRead()
+    TestDispatch()
     TestComHelpers()
     FileAppend "PASS uia_checks=" Checks " AHK=" A_AhkVersion "`n", "*"
 } finally {
@@ -214,6 +216,59 @@ StructuralFixture(value := "alpha confi!") {
     api.StaleDocument := true
 }
 
+TestComboRead() {
+    api := UiaTestApi
+    api.Reset(), api.Props[30003] := 50003
+    field := EacUiaFieldProvider.Read(api.Native)
+    Assert(field && field.Before == "alpha confi" && field.After == "!", "editable ComboBox reads bounded caret neighborhood")
+    Assert(api.RangeChecks > 3 && !api.OutsideTextCalls && !api.ValueCalls, "ComboBox always confines ranges to input before reading")
+    Assert(EacUiaFieldProvider.IsFocused(field, api.Native), "editable ComboBox keepalive")
+    api.Props[30046] := true
+    Assert(!EacUiaFieldProvider.IsFocused(field, api.Native), "ComboBox becoming list-only loses keepalive")
+    api.Reset(), api.Props[30003] := 50003, api.Caret := StrLen(api.Content)
+    field := EacUiaFieldProvider.Read(api.Native)
+    Assert(field && field.After == "" && api.ValueCalls = 2, "ComboBox EOF proven against same input Value")
+    StructuralFixture(), api.Props[30003] := 50003
+    Assert(EacUiaFieldProvider.Read(api.Native) && !api.OutsideTextCalls, "ComboBox with page-relative document bounds stays inside field")
+    api.Reset(), api.Props[30003] := 50003, api.Props[30046] := true
+    Rejected("list-only ComboBox", "UIAReadOnlyOrRange", true)
+    api.Reset(), api.Props[30003] := 50003, api.UnknownProperty := 30046
+    Rejected("ComboBox unknown editability", "UIAUnavailable", true)
+    api.Reset(), api.Props[30003] := 50003, api.Props[30019] := true
+    Rejected("password ComboBox", "UIAUnsafeField", true)
+    api.Reset(), api.Props[30003] := 50003, api.SelectionLength := 1
+    Rejected("ComboBox selected text", "UIAUnavailable", true)
+    api.Reset(), api.Props[30003] := 50003, api.SelectionReadOnly := true
+    Rejected("ComboBox readonly text range", "UIAReadOnlyOrRange", true)
+    api.Reset(), api.Props[30003] := 50003, api.FinalReadOnly := true
+    Rejected("ComboBox becomes readonly during read", "FocusChanged")
+    api.Reset(), api.Props[30003] := 50003, api.FinalType := 50030
+    Rejected("ComboBox becomes document during read", "FocusChanged")
+}
+
+TestDispatch() {
+    ; Actual HWND/class dispatch with a deterministic UIA backend. This proves
+    ; the entry route, not a real application's UIA implementation or input.
+    fixture := Gui("+ToolWindow -Caption")
+    try {
+        control := fixture.AddText(, "dispatch fixture")
+        api := UiaTestApi
+        api.Reset()
+        api.Native := {Hwnd: fixture.Hwnd, Focus: control.Hwnd, Key: fixture.Hwnd ":" control.Hwnd}
+        api.CurrentNative := api.Native
+        field := EacFieldGuard.Read(api.Native)
+        Assert(field && field.Provider = "UIA" && api.FocusCalls = 2, "non-Chromium HWND class reaches guarded UIA provider")
+        for options in ["Password", "ReadOnly"] {
+            control := fixture.AddEdit(options, "confi")
+            api.Reset()
+            context := {Hwnd: fixture.Hwnd, Focus: control.Hwnd, Key: fixture.Hwnd ":" control.Hwnd}
+            Assert(!EacFieldGuard.Read(context) && !api.BeginCalls, "native " options " refusal never falls through to UIA")
+        }
+    } finally {
+        fixture.Destroy()
+    }
+}
+
 Rejected(description, reason, beforeText := false) {
     api := UiaTestApi
     Assert(!EacUiaFieldProvider.Read(api.Native), description " rejected")
@@ -331,6 +386,7 @@ class UiaTestApi extends EacUia {
         this.BadLeftEnd := false, this.BadRightStart := false, this.NoAnchor := false
         this.Reenter := false, this.NestedRejected := false
         this.LoseFieldFocus := false
+        this.FinalReadOnly := false, this.FinalType := 0
         this.Array := UiaComStub("array", this)
     }
     static FailAt(stage) {
@@ -380,6 +436,10 @@ class UiaTestApi extends EacUia {
             if this.LoseFieldFocus && this.FocusCalls > 1
                 return false
         }
+        if this.FocusCalls > 1 && id = 30046 && this.FinalReadOnly
+            return true
+        if this.FocusCalls > 1 && id = 30003 && this.FinalType
+            return this.FinalType
         return this.Props[id]
     }
     static AncestorMatches(*) => this.Ancestor

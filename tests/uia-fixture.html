@@ -4,6 +4,8 @@
 <h1>EnglishAutocomplete disposable browser fixture</h1>
 <form id="testForm"><label>Plain text<input id="plain" aria-label="Plain test text" value="compu" autofocus></label>
 <label>Textarea<textarea id="area" aria-label="Multiline test text">confi</textarea></label>
+<label>Search combobox<textarea id="searchCombo" role="combobox" aria-label="Search combobox test text" aria-autocomplete="both" aria-expanded="false" aria-controls="searchChoices">confi</textarea></label>
+<ul id="searchChoices" role="listbox" hidden><li role="option">confidence</li></ul>
 <label>Contenteditable<div id="rich" role="textbox" aria-label="Rich test text" contenteditable="true">confi</div></label>
 <label>Read only<input id="readonly" aria-label="Read only test text" value="confi" readonly></label>
 <label>Password<input id="password" aria-label="Password test field" type="password"></label>

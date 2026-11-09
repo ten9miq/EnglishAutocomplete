@@ -122,20 +122,24 @@ Assert(!EacFieldGuard.Matches({Before: "other", After: ""}, "compu"), "auto corr
 Assert(!EacFieldGuard.Matches({Before: "Compu", After: ""}, "compu"), "case-only auto correction mismatch refuses")
 Assert(EacFieldGuard.Matches({Before: "computer `r`n", After: ""}, "computer", true), "boundary learning verification")
 Assert(!EacFieldGuard.Matches({Before: "computer", After: ""}, "computer", true), "no boundary no learning")
-Assert(Settings.Policy("excel.exe").Enabled == false, "Excel off by default")
-Assert(!Settings.Policy("unknown.exe").Enabled && Settings.Policy("unknown.exe").Learning, "unknown app learns without candidate display")
+Assert(Settings.Policy("excel.exe").Enabled && Settings.Policy("excel.exe").Keys, "Excel safe fields can complete without app opt-in")
+Assert(Settings.Policy("code.exe").Enabled && Settings.Policy("code.exe").Keys, "VS Code safe fields can complete without app opt-in")
+Assert(Settings.Policy("unknown.exe").Enabled && Settings.Policy("unknown.exe").Learning, "unknown app can complete and learn in verified safe fields")
 for process in ["notepad.exe", "notepad++.exe", "sakura.exe", "chrome.exe", "brave.exe", "msedge.exe", "chatgpt.exe", "codex.exe"]
     Assert(Settings.Policy(process).Enabled && Settings.Policy(process).Learning, "default supported app learns " process)
 Assert(!Settings.Policy("keepass.exe").Enabled && !Settings.Policy("keepass.exe").Learning, "excluded app cannot learn")
 IniWrite 0, settingsPath, "app:optout.exe", "Learning"
 Assert(!EacConfig(Root, settingsPath).Policy("optout.exe").Learning, "explicit per-app learning opt-out")
+IniWrite 0, settingsPath, "app:optout.exe", "Enabled"
+Assert(!EacConfig(Root, settingsPath).Policy("optout.exe").Enabled, "explicit per-app completion opt-out")
 IniWrite 0, settingsPath, "General", "Learning"
 Assert(!EacConfig(Root, settingsPath).Policy("chrome.exe").Learning, "general learning opt-out overrides enabled profile")
 IniDelete settingsPath, "General", "Learning"
 IniDelete settingsPath, "General", "PromotionCount"
 IniDelete settingsPath, "Applications", "DefaultLearning"
+IniDelete settingsPath, "Applications", "DefaultEnabled"
 fallback := EacConfig(Root, settingsPath)
-Assert(fallback.PromotionCount = 2 && fallback.Policy("unknown.exe").Learning, "missing INI keys use new learning defaults")
+Assert(fallback.PromotionCount = 2 && fallback.Policy("unknown.exe").Learning && fallback.Policy("unknown.exe").Enabled, "missing INI keys enable verified-field completion and learning")
 Assert(Settings.Policy("notepad.exe").Tab == false, "Tab unchanged default")
 BrokenPath := A_ScriptDir "\results\broken.db"
 if FileExist(BrokenPath)

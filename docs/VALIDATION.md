@@ -1,5 +1,15 @@
 # 検証記録 — 2026-11-08
 
+## 2026-11-09: Google検索欄・アプリ名に依らない補完
+
+Brave URL欄では候補が出るがGoogle検索欄では出ないという利用者の報告を調査した。利用者がIME OFFで人工入力`confi`を手入力する間、本体のcached numeric diagnosticと、フォーカス要素の数値UIA属性だけを監視した。エージェントからの前面化・フォーカス変更・キー注入は行わず、URL・タイトル・本文・Valueの診断記録は採取していない。
+
+- 修正前は本体がStage=2、Reason=UIAUnsafeField、Property=30003で停止。利用者がGoogle検索欄の末尾をクリックしたタイミングでControlType=50003（ComboBox）、HasKeyboardFocus/IsKeyboardFocusable/IsEnabled=true、IsPassword/IsOffscreen=false、TextPattern/ValuePattern対応、ValueIsReadOnly=false、単一の空選択、rangeのreadonly=falseを確認した。従来のEdit=50004限定が原因。別タイミングで観測したDocument=50030は許可対象にしていない。
+- 編集可能ComboBox対応後、利用者から「候補が表示され、Tabで選択できた」と回答。本体もChrome/Brave前面の数値フラグ、ControlType=50003、Stage=14、Reason=OK、Visible=true、続いてNavigating=true/Selected=1を記録し一致した。Google検索欄でのEnter/数字確定・Chromeの同じ検索欄・Edgeは今回未検証。確定回数の増加も監視されたが、別途依頼していない操作の内容は断定しない。
+- UIA経路のウィンドウクラス制限をChromium専用から汎用へ広げ、未登録アプリもDefaultEnabled=1にした。Excel/VS Codeの標準プロファイルもアプリ単位ではEnabled/Keys=1にし、手元の`user/settings.ini`へ同じ変更を反映した。Excludedと明示OFFは優先する。安全なEdit/編集可能ComboBoxだけを対象にし、Document、リスト専用ComboBox、password、readonly、選択あり、欄外range、キャレット/IME/focus不明は拒否する。native Edit/RichEditの拒否をUIAへ迂回しない。
+- AHK v2 x64 2.0.28。`tools/verify.ps1 -Ahk "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe"`で構文4入口・core115・IME56・navigation107・forget29・UIA425・サクラ27項目をすべてexit 0。一時絶対Includeラッパーも削除した。UIA追加試験は編集可能ComboBox、EOF、ページ相対範囲の包含、password/list-only/readonly/selection/属性不明/途中の型変更の拒否、非Chromiumの実HWNDクラスから模擬UIAへの入口、native password/readonly拒否の維持を確認。実アプリ全部のUIA実装を試験したことは意味しない。検索P95=2.750ms（1000回、非専有環境）。
+- 開始時に実行中だった本体58912だけを`/restart /ErrorStdOut`し、PID58624の対象CommandLine・単一プロセス・WM_NULL応答・Hook稼働・3秒後生存を確認。他のAHK10本のPIDを維持。作業専用のUIA helperと数値監視は終了した。証拠はGit除外の`tests/results/chrome-devtools/google-monitor.jsonl`、`focused-type.txt`、`restart-universal.json`。README・手動試験表・設計書・TODOを更新。個人DBを手動変更せず、commit/pushは行っていない。
+
 ## 2026-11-09: 選択した学習候補の削除
 
 選択した自動学習候補をCtrl+Deleteまたは行右端の×で削除できるようにした。個人DBの`manual=0/blocked=0/uses>0`だけをトランザクションで削除する。配布辞書は変更せず、その語の使用履歴だけ消す。手動登録・禁止を保護し、未知語は後で再学習できる。削除後は未選択に戻し、保留観測を消して即時の再学習を防ぐ。
