@@ -5,7 +5,8 @@ param(
     [switch]$LearningOnly,
     [switch]$ImeIntegration,
     [switch]$Dpi,
-    [switch]$SelectionIntegration
+    [switch]$SelectionIntegration,
+    [switch]$ForgetIntegration
 )
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -44,6 +45,7 @@ Write-Output "Temporary syntax wrappers removed=$(!(Test-Path (Join-Path $root '
 if (Test-Path (Join-Path $root 'tests/core.ahk')) { Invoke-Ahk (Join-Path $root 'tests/core.ahk') }
 if (Test-Path (Join-Path $root 'tests/ime.ahk')) { Invoke-Ahk (Join-Path $root 'tests/ime.ahk') }
 if (Test-Path (Join-Path $root 'tests/navigation.ahk')) { Invoke-Ahk (Join-Path $root 'tests/navigation.ahk') }
+if (Test-Path (Join-Path $root 'tests/forget.ahk')) { Invoke-Ahk (Join-Path $root 'tests/forget.ahk') }
 if (Test-Path (Join-Path $root 'tests/uia.ahk')) { Invoke-Ahk (Join-Path $root 'tests/uia.ahk') }
 if (Test-Path (Join-Path $root 'tests/sakura.ahk')) { Invoke-Ahk (Join-Path $root 'tests/sakura.ahk') }
 if ($Integration) { Invoke-Ahk (Join-Path $root 'tests/integration.ahk') }
@@ -52,3 +54,4 @@ elseif ($LearningOnly) { Invoke-Ahk -Script (Join-Path $root 'tests/integration.
 if ($ImeIntegration) { Invoke-Ahk (Join-Path $root 'tests/ime-integration.ahk') }
 if ($Dpi) { Invoke-Ahk (Join-Path $root 'tests/dpi.ahk') }
 if ($SelectionIntegration) { Invoke-Ahk (Join-Path $root 'tests/selection-integration.ahk') }
+if ($ForgetIntegration) { Invoke-Ahk (Join-Path $root 'tests/forget-integration.ahk') }

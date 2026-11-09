@@ -17,6 +17,8 @@ class EacSuggestionGui {
                 this.Numbers.Push(this.Window.AddText("x0 y0 w1 h1 +0x428C c777777", ""))
                 this.Labels.Push(this.Window.AddText("x0 y0 w1 h1 +0x428C", ""))
             }
+            this.DeleteControl := this.Window.AddText("x0 y0 w1 h1 +0x4201 c777777 BackgroundE5F1FB", "×")
+            this.DeleteControl.Visible := false
         } finally {
             EacDpi.Restore(previous)
         }
@@ -24,9 +26,13 @@ class EacSuggestionGui {
         this.NormalFont := 0, this.BoldFont := 0
         this.Visible := false, this.Rendered := "", this.LastLayout := false
         this.Disposed := false
+        this.DeleteItem := false
     }
 
     Show(items, selected, anchor, count := 0) {
+        ; Invalidate the old hit target before moving/redrawing controls. Publish
+        ; the new row only after its final physical geometry is on screen.
+        this.DeleteItem := false
         if !items.Length {
             this.Hide()
             return
@@ -54,11 +60,13 @@ class EacSuggestionGui {
                 DllCall "ReleaseDC", "Ptr", this.Window.Hwnd, "Ptr", dc
             }
             layout := EacSuggestionGui.Layout(surface, anchor, measuredWidth, textHeight, texts.Length, this.Config, selected)
+            deleteItem := selected >= 1 && selected <= items.Length && items[selected].HasOwnProp("Learned")
+                && items[selected].Learned ? items[selected] : false
             if !layout.Rows {
                 this.Hide()
                 return
             }
-            stamp := surface.Dpi ":" layout.Width ":" layout.RowHeight ":" layout.Rows ":" layout.First ":" selected
+            stamp := surface.Dpi ":" layout.Width ":" layout.RowHeight ":" layout.Rows ":" layout.First ":" selected ":" (!!deleteItem)
             for value in texts
                 stamp .= "|" value
             if changed || !(stamp == this.Rendered) {
@@ -74,7 +82,7 @@ class EacSuggestionGui {
                     row.Move(1, top, Max(1, layout.Width - 2), layout.RowHeight)
                     number.Move(layout.MarginX, top, layout.NumberWidth, layout.RowHeight)
                     label.Move(layout.MarginX + layout.NumberWidth, top,
-                        Max(1, layout.Width - 2 * layout.MarginX - layout.NumberWidth), layout.RowHeight)
+                        Max(1, layout.Width - 2 * layout.MarginX - layout.NumberWidth - layout.DeleteWidth), layout.RowHeight)
                     background := itemIndex = selected ? "BackgroundE5F1FB" : "BackgroundFFFFFF"
                     row.Opt(background)
                     number.Opt(background (itemIndex = selected ? " c005A9E" : " c777777"))
@@ -88,9 +96,17 @@ class EacSuggestionGui {
                 }
                 this.Rendered := stamp
             }
+            this.DeleteControl.Visible := !!deleteItem
+            if deleteItem {
+                this.DeleteControl.Move(layout.Width - layout.MarginX - layout.DeleteWidth,
+                    layout.MarginY + (selected - layout.First) * layout.RowHeight, layout.DeleteWidth, layout.RowHeight)
+                DllCall "SendMessageW", "Ptr", this.DeleteControl.Hwnd, "UInt", 0x30,
+                    "Ptr", this.NormalFont, "Ptr", true
+            }
             this.Window.Show("NA x" layout.X " y" layout.Y " w" layout.Width " h" layout.Height)
             this.LastLayout := layout
             this.Visible := true
+            this.DeleteItem := deleteItem
         } finally {
             EacDpi.Restore(previous)
         }
@@ -112,6 +128,7 @@ class EacSuggestionGui {
             DllCall "SendMessageW", "Ptr", label.Hwnd, "UInt", 0x30, "Ptr", normal, "Ptr", false
         for label in this.Numbers
             DllCall "SendMessageW", "Ptr", label.Hwnd, "UInt", 0x30, "Ptr", normal, "Ptr", false
+        DllCall "SendMessageW", "Ptr", this.DeleteControl.Hwnd, "UInt", 0x30, "Ptr", normal, "Ptr", false
         for handle in [this.NormalFont, this.BoldFont]
             if handle
                 DllCall "DeleteObject", "Ptr", handle
@@ -148,10 +165,11 @@ class EacSuggestionGui {
         marginX := Max(0, Min(Round(6 * scale), (workWidth - 1) // 2))
         marginY := Max(0, Min(Round(4 * scale), (workHeight - 1) // 2))
         numberWidth := Max(1, Min(Round(22 * scale), Max(1, workWidth - 2 * marginX - 1)))
+        deleteWidth := Max(1, Round(24 * scale))
         rowHeight := Max(1, textHeight + Round(6 * scale))
         rows := Max(0, Min(count, (workHeight - 2 * marginY) // rowHeight))
         width := Min(workWidth, Max(Round(180 * scale),
-            Min(Round(520 * scale), textWidth + 2 * marginX + numberWidth + Round(4 * scale))))
+            Min(Round(520 * scale), textWidth + 2 * marginX + numberWidth + deleteWidth + Round(4 * scale))))
         height := rows * rowHeight + 2 * marginY
         ; Align the candidate word, leaving its number and padding to the left
         ; of the caret. Clamp the complete popup at work-area edges.
@@ -167,13 +185,32 @@ class EacSuggestionGui {
         y := Max(surface.Top, Min(y, surface.Bottom - height))
         return {X: x, Y: y, Width: width, Height: height, RowHeight: rowHeight,
             Rows: rows, First: Max(1, Min(count - rows + 1, selected - rows + 1)),
-            MarginX: marginX, MarginY: marginY, NumberWidth: numberWidth, Dpi: surface.Dpi, Surface: surface}
+            MarginX: marginX, MarginY: marginY, NumberWidth: numberWidth, DeleteWidth: deleteWidth, Dpi: surface.Dpi, Surface: surface}
+    }
+
+    DeleteAtPointer() {
+        if !this.Visible || !this.DeleteItem || !this.DeleteControl.Visible
+            return false
+        cursor := Buffer(8, 0)
+        if !DllCall("GetCursorPos", "Ptr", cursor)
+            return false
+        x := NumGet(cursor, 0, "Int"), y := NumGet(cursor, 4, "Int")
+        point := (x & 0xFFFFFFFF) | ((y & 0xFFFFFFFF) << 32)
+        hwnd := DllCall("WindowFromPoint", "Int64", point, "Ptr")
+        if DllCall("GetAncestor", "Ptr", hwnd, "UInt", 2, "Ptr") != this.Window.Hwnd
+            return false
+        rect := Buffer(16, 0)
+        DllCall "GetWindowRect", "Ptr", this.DeleteControl.Hwnd, "Ptr", rect
+        return x >= NumGet(rect, 0, "Int") && x < NumGet(rect, 8, "Int")
+            && y >= NumGet(rect, 4, "Int") && y < NumGet(rect, 12, "Int") ? this.DeleteItem : false
     }
 
     Hide() {
         if this.Visible
             this.Window.Hide()
         this.Visible := false
+        this.DeleteItem := false
+        this.DeleteControl.Visible := false
     }
 
     Dispose() {

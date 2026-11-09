@@ -92,6 +92,28 @@ class EacUserDictionary {
             this.Db.Query("DELETE FROM personal WHERE norm=?", [StrLower(word)])
     }
 
+    ForgetLearned(word) {
+        if !this.Enabled
+            return false
+        transaction := false
+        try {
+            this.Db.Query("BEGIN IMMEDIATE")
+            transaction := true
+            rows := this.Db.Query("SELECT uses,manual,blocked FROM personal WHERE norm=?", [StrLower(word)])
+            eligible := rows.Length && Integer(rows[1][1]) > 0 && !Integer(rows[1][2]) && !Integer(rows[1][3])
+            if eligible
+                this.Db.Query("DELETE FROM personal WHERE norm=? AND manual=0 AND blocked=0", [StrLower(word)])
+            this.Db.Query("COMMIT")
+            return !!eligible
+        } catch {
+            if transaction
+                try this.Db.Query("ROLLBACK")
+            this.Enabled := false
+            this.Fault := "User database delete failed; learning stopped"
+            return false
+        }
+    }
+
     ResetFrequency() {
         if this.Enabled
             this.Db.Query("UPDATE personal SET uses=0,last_used=0")

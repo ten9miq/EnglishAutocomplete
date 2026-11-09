@@ -62,6 +62,17 @@ try {
             Assert(WinGetStyle("ahk_id " label.Hwnd) & 0x4000, "long translation uses end ellipsis")
         }
         Record("MONITOR index=" A_Index " dpi=" layout.Dpi " rect=" x "," y "," width "," height)
+        Items[3].Learned := true
+        Popup.Show(Items, 3, point, 5)
+        Assert(Popup.DeleteControl.Visible && Popup.DeleteItem = Items[3], "selected learned row owns delete cross")
+        ControlGetPos &dx, &dy, &dw, &dh, Popup.DeleteControl.Hwnd
+        ControlGetPos &lx, &ly, &lw, &lh, Popup.Labels[3].Hwnd
+        Assert(dx >= lx + lw && dx + dw <= Popup.LastLayout.Width && dy = ly && dh = lh,
+            "delete cross fits selected row without covering candidate text")
+        Assert(WinExist("A") != Popup.Window.Hwnd, "delete affordance keeps popup NoActivate")
+        Popup.Show(Items, 0, point, 5)
+        Assert(!Popup.DeleteControl.Visible && !Popup.DeleteItem, "unselected preview has no actionable delete cross")
+        Items[3].Learned := false
         Popup.Hide()
     }
     Popup.Show(Items, 5, {X: 100, Y: 100, Hwnd: 0}, 9)

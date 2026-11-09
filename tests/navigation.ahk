@@ -106,6 +106,36 @@ Assert(app.Committed = 1 && !app.EnterLatched, "key-up before handler cannot lea
 Assert(!app.CanIntercept(bindings["enter"]), "a separate Enter after release passes through")
 app.Ready(), app.Accepting := true, app.AcceptScopeKey := "test", app.Ime.Allowed := false
 Assert(!app.CanIntercept(bindings["enter"]), "new native-IME Enter is not stolen during another commit")
+app.Ready()
+Assert(bindings.Has("^delete") && !bindings.Has("delete"), "only Ctrl Delete is registered for forgetting")
+Assert(!app.CanIntercept(bindings["^delete"]), "unselected Ctrl Delete passes through")
+app.Navigating := true, app.Selected := 1
+Assert(!app.CanIntercept(bindings["^delete"]), "base-only selected Ctrl Delete passes through")
+app.Items[1] := {Norm: "learned", Learned: true}
+Assert(app.CanIntercept(bindings["^delete"]), "selected learned Ctrl Delete can arm one removal")
+app.Action(bindings["^delete"])
+Assert(app.Forgot = 1 && app.DeleteLatched && !app.Selected, "forget action removes once and clears selection")
+Assert(app.CanIntercept(bindings["^delete"]), "held Ctrl Delete repeats stay captured")
+app.Action(bindings["^delete"])
+Assert(app.Forgot = 1, "held Ctrl Delete repeat never removes next candidate")
+app.ReleaseDelete()
+Assert(!app.CanIntercept(bindings["^delete"]), "released Ctrl Delete returns to native behavior")
+app.Ready(), app.Items[1] := {Norm: "learned", Learned: true}, app.Selected := 1, app.Navigating := true
+app.Ime.Allowed := false
+Assert(!app.CanIntercept(bindings["^delete"]), "IME ON prevents new Ctrl Delete interception")
+app.Ime.Allowed := true, app.Allowed := false
+Assert(!app.CanIntercept(bindings["^delete"]), "unsafe field prevents new Ctrl Delete interception")
+app.Ready(), app.Items[1] := {Norm: "learned", Learned: true}, app.Selected := 1, app.Navigating := true
+Assert(app.CanIntercept(bindings["^delete"]), "short delete press is armed")
+app.ReleaseDelete()
+app.Action(bindings["^delete"])
+Assert(!app.DeleteLatched && app.Forgot = 2, "early Delete key-up cannot leave repeat latch stuck")
+app.Ready(), app.Items[1] := {Norm: "first", Learned: true}, app.Selected := 1, app.Navigating := true
+Assert(app.CanIntercept(bindings["^delete"]), "delete captures original selected row")
+app.Items[1] := {Norm: "replacement", Learned: true}
+app.Action(bindings["^delete"])
+Assert(app.Forgot = 2, "row replacement between condition and action never deletes replacement")
+app.ReleaseDelete()
 FileAppend "PASS navigation_checks=" Checks " AHK=" A_AhkVersion "`n", "*"
 ExitApp 0
 
@@ -119,6 +149,7 @@ Assert(condition, description) {
 class NavigationApp extends EacApplication {
     Allowed := true
     Committed := 0
+    Forgot := 0
     __New() {
         this.Config := {Enabled: true, AcceptKey: "^!Space", NextKey: "Tab", PreviousKey: "^!Up",
             CancelKey: "Esc", DirectModifier: "^!", DebounceMs: 30, InitialCandidates: 5}
@@ -139,10 +170,10 @@ class NavigationApp extends EacApplication {
         this.ShownGeneration := this.Tracker.Generation
         this.Pending := []
         this.Items := [1,2,3,4,5,6,7,8,9]
-        this.Target := {Context: {Key: "test"}, Ime: {Key: "test"}, Field: {Before: "confi", After: ""},
+        this.Target := {Context: {Key: "test"}, Ime: {Key: "test"}, Field: {Before: "confi", After: "", Position: 5},
             Policy: {Enabled: true, Keys: true, Tab: false, Enter: false, ImeStyleKeys: true}}
     }
-    Snapshot() => this.Allowed ? this.Target : false
+    Snapshot() => this.Allowed && this.Ime.Allowed ? this.Target : false
     CurrentContext() => this.Target.Context
     Refresh() {
         if !this.Allowed
@@ -161,6 +192,14 @@ class NavigationApp extends EacApplication {
         return true
     }
     Modifiers() => 0
+    DeleteLearned(item) {
+        if !this.SelectedLearned() || this.Items[this.Selected] != item
+            return false
+        this.Forgot += 1
+        this.ClearSelection()
+        this.Visible := false
+        return true
+    }
 }
 
 class NavigationIme {

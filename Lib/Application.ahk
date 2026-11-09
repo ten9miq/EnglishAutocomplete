@@ -22,6 +22,11 @@ class EacApplication {
     EnterReleaseSerial := 0
     EnterArmedSerial := 0
     ReleaseBindings := []
+    DeleteLatched := false
+    DeleteActionArmed := false
+    DeleteReleaseSerial := 0
+    DeleteArmedSerial := 0
+    DeleteArmedItem := false
 
     __New(config, start := true) {
         this.Config := config
@@ -48,7 +53,8 @@ class EacApplication {
         this.InstallKeys()
         ; Mouse handlers pass through and invalidate without reading app text.
         if watchMouse {
-            for key in ["~*LButton", "~*RButton", "~*MButton", "~*WheelUp", "~*WheelDown"]
+            Hotkey "~*LButton", ObjBindMethod(this, "OnLeftButton")
+            for key in ["~*RButton", "~*MButton", "~*WheelUp", "~*WheelDown"]
                 Hotkey key, ObjBindMethod(this, "Reset")
         }
         this.Hook.Start()
@@ -72,6 +78,16 @@ class EacApplication {
         }
         HotIf
         this.EnterLatched := false, this.EnterActionArmed := false, this.Accepting := false
+        this.DeleteLatched := false, this.DeleteActionArmed := false
+        this.DeleteArmedItem := false
+    }
+
+    OnLeftButton(*) {
+        item := this.Gui.DeleteAtPointer()
+        if item
+            this.DeleteLearned(item)
+        else
+            this.Reset()
     }
 
     Reset(*) {
@@ -129,6 +145,8 @@ class EacApplication {
 
     OnKeyDown(hook, vk, sc) {
         if this.Sending
+            return
+        if vk = 0x2E && this.DeleteLatched
             return
         bit := this.ModifierBit(vk)
         if bit {
@@ -357,6 +375,8 @@ class EacApplication {
     }
 
     CanIntercept(binding, *) {
+        if binding.Action = "forget" && this.DeleteLatched
+            return true
         plainEnter := binding.Vk = 13 && binding.Modifiers = 0
         if plainEnter && this.EnterLatched
             return true ; the entire consumed press remains ours until key-up
@@ -397,18 +417,22 @@ class EacApplication {
                 && EacFieldGuard.StillFocused(this.Target.Field, context)
         }
         snapshot := this.Snapshot()
-        return snapshot && snapshot.Context.Key = this.Target.Context.Key
+        allowed := snapshot && snapshot.Context.Key = this.Target.Context.Key
             && snapshot.Ime.Key = this.Target.Ime.Key
             && EacFieldGuard.SameTarget(snapshot.Field, this.Target.Field)
-            && (!snapshot.Field.HasOwnProp("Identity") || EacFieldGuard.SamePosition(snapshot.Field, this.Target.Field))
+            && ((binding.Action != "forget" && !snapshot.Field.HasOwnProp("Identity"))
+                || EacFieldGuard.SamePosition(snapshot.Field, this.Target.Field))
             && EacFieldGuard.Matches(snapshot.Field, this.Tracker.Word)
             && EacFieldGuard.StillFocused(snapshot.Field, snapshot.Context)
+        return allowed && (binding.Action != "forget" || this.ArmDelete())
     }
 
     BindingPermitted(binding) {
         if !this.Target || !this.Config.Enabled || !this.Target.Policy.Enabled || !this.Target.Policy.Keys
             return false
         policy := this.Target.Policy
+        if binding.Action = "forget" && !this.SelectedLearned()
+            return false
         if binding.StyleOnly && !policy.ImeStyleKeys
             return false
         if binding.Action = "number" && binding.Modifiers = 0
@@ -425,6 +449,17 @@ class EacApplication {
     CurrentContext() => EacFieldGuard.Context()
 
     Action(binding, *) {
+        if binding.Action = "forget" {
+            if !this.DeleteActionArmed
+                return
+            this.DeleteActionArmed := false
+            this.DeleteLatched := this.DeleteReleaseSerial = this.DeleteArmedSerial
+            item := this.DeleteArmedItem
+            this.DeleteArmedItem := false
+            if item
+                this.DeleteLearned(item)
+            return
+        }
         plainEnter := binding.Vk = 13 && binding.Modifiers = 0
         if plainEnter {
             ; The hotkey condition armed exactly one action. Repeats do nothing.
@@ -471,6 +506,51 @@ class EacApplication {
 
     ClearSelection() {
         this.Selected := 0, this.Navigating := false, this.Expanded := false
+    }
+    SelectedLearned() => this.Navigating && this.Selected >= 1 && this.Selected <= this.Items.Length
+        && IsObject(this.Items[this.Selected]) && this.Items[this.Selected].HasOwnProp("Learned") && this.Items[this.Selected].Learned
+
+    DeleteLearned(item) {
+        generation := this.Tracker.Generation
+        if this.Accepting || this.Sending || !this.Visible || !this.Target || !this.SelectedLearned()
+            || this.Items[this.Selected] != item || this.ShownGeneration != generation
+            || !this.Config.Enabled || !this.Target.Policy.Enabled || !this.Target.Policy.Keys
+            return false
+        snapshot := this.Snapshot()
+        if !snapshot || !snapshot.Policy.Enabled || !snapshot.Policy.Keys
+            || snapshot.Context.Key != this.Target.Context.Key || snapshot.Ime.Key != this.Target.Ime.Key
+            || !EacFieldGuard.SameTarget(snapshot.Field, this.Target.Field)
+            || !EacFieldGuard.SamePosition(snapshot.Field, this.Target.Field)
+            || !EacFieldGuard.Matches(snapshot.Field, this.Tracker.Word)
+            || !EacFieldGuard.StillFocused(snapshot.Field, snapshot.Context)
+            return false
+        current := this.CurrentContext()
+        ime := this.Ime.GetState(snapshot.Context)
+        if !current || current.Key != snapshot.Context.Key || !ime.Allowed || ime.Key != snapshot.Ime.Key
+            || generation != this.Tracker.Generation || !this.SelectedLearned() || this.Items[this.Selected] != item
+            return false
+        ; Bound SQL rechecks manual/blocked state under a write transaction.
+        ; A failed write never pretends that the candidate was deleted.
+        if !this.User.ForgetLearned(item.Norm)
+            return false
+        this.Pending := []
+        this.ClearSelection()
+        this.ShownGeneration := -1
+        this.Refresh()
+        return true
+    }
+    CanReleaseDelete(*) => this.DeleteLatched
+    ArmDelete() {
+        if !this.DeleteActionArmed {
+            this.DeleteArmedSerial := this.DeleteReleaseSerial
+            this.DeleteArmedItem := this.Items[this.Selected]
+            this.DeleteActionArmed := true
+        }
+        return true
+    }
+    ReleaseDelete(*) {
+        this.DeleteReleaseSerial += 1
+        this.DeleteLatched := false
     }
     CandidateCount() => this.Expanded ? this.Items.Length : Min(this.Config.InitialCandidates, this.Items.Length)
     ArmEnter() {
@@ -567,6 +647,13 @@ class EacApplication {
         HotIf
         Hotkey "~*Enter up", ObjBindMethod(this, "ReleaseEnter")
         this.ReleaseBindings.Push({Key: "~*Enter up", Condition: false})
+        condition := ObjBindMethod(this, "CanReleaseDelete")
+        HotIf condition
+        Hotkey "$*Delete up", ObjBindMethod(this, "ReleaseDelete")
+        this.ReleaseBindings.Push({Key: "*Delete up", Condition: condition})
+        HotIf
+        Hotkey "~*Delete up", ObjBindMethod(this, "ReleaseDelete")
+        this.ReleaseBindings.Push({Key: "~*Delete up", Condition: false})
     }
 
     BuildBindings() {
@@ -579,6 +666,8 @@ class EacApplication {
         primary := Map()
         for definition in definitions
             primary[StrLower(definition[1])] := true
+        if !primary.Has("^delete")
+            definitions.Push(["^Delete", "forget"])
         for alias in aliases
             if !primary.Has(StrLower(alias[1]))
                 definitions.Push([alias[1], alias[2], 0, true])

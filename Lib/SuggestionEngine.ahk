@@ -25,7 +25,7 @@ class EacSuggestionEngine {
             if !RegExMatch(ids, "^\d+(?:,\d+)*$")
                 throw Error("Invalid dictionary index")
             for row in this.Db.Query("SELECT norm,word,score,translation FROM words WHERE id IN (" ids ")")
-                pool[row[1]] := {Norm: row[1], Word: row[2], Score: Integer(row[3]), Translation: row[4]}
+                pool[row[1]] := {Norm: row[1], Word: row[2], Score: Integer(row[3]), Translation: row[4], Learned: false}
         }
         for row in this.Personal.Find(prefix) {
             norm := row[1]
@@ -38,6 +38,7 @@ class EacSuggestionEngine {
             if !pool.Has(norm)
                 pool[norm] := {Norm: norm, Word: row[2], Score: 0, Translation: "[個人辞書]"}
             item := pool[norm]
+            item.Learned := Integer(row[3]) > 0 && !Integer(row[4])
             if Integer(row[4])
                 item.Word := row[2]
             age := Max(0, DateDiff(A_NowUTC, "19700101000000", "Seconds") - Integer(row[5]))

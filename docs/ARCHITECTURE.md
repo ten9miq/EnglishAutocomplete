@@ -31,6 +31,8 @@ freshness: version-sensitive
 
 ## 検証・再現
 
+選択した自動学習候補には`Learned`を付け、Ctrl+Delete/選択行の×から`ForgetLearned`を呼ぶ。UIが保持した候補オブジェクト、入力世代、フォーカス、入力位置、IMEを再確認し、SQLの`BEGIN IMMEDIATE`内でも`manual=0/blocked=0/uses>0`を照合する。成功した単語だけ履歴行を削除し、保留学習を捨てて未選択の候補を再検索する。標準辞書は変更せず、手動登録・禁止行を保護する。×クリックだけ通常のマウスResetから分岐し、NoActivateを維持する。DB書込み失敗では候補を削除済み扱いにしない。
+
 - `tests/core.ahk`: 本物のWindows SQLiteを使い、大小文字も厳密に比較する自動試験。
 - `tests/integration.ahk` + `fixture.ahk`: 別プロセスの専用Editの実入力試験。各文字前に対象窓を確認する。無関係なホイール操作の影響を分離するため、この試験インスタンスだけマウス監視を無効にする。本体入口は有効。
 - `tools/verify.ps1 -Integration`: 100ms一時Include構文検証、実AHK試験。一時ラッパーをfinallyで削除する。
