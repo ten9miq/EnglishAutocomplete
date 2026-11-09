@@ -6,12 +6,17 @@ class EacSuggestionGui {
         previous := EacDpi.Enter()
         try {
             this.Window := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x08000020 -DPIScale", "EnglishAutocomplete candidates")
-            this.Window.BackColor := "F4F5F7"
+            this.Window.BackColor := "BFC4CC"
             this.Window.MarginX := 0, this.Window.MarginY := 0
-            this.Labels := []
-            ; NOPREFIX | LEFTNOWORDWRAP | ENDELLIPSIS | CENTERIMAGE.
+            this.Panel := this.Window.AddText("x1 y1 w1 h1 BackgroundFFFFFF", "")
+            this.Rows := [], this.Numbers := [], this.Labels := []
             loop config.MaxCandidates
+                this.Rows.Push(this.Window.AddText("x0 y0 w1 h1 BackgroundFFFFFF", ""))
+            ; NOPREFIX | LEFTNOWORDWRAP | ENDELLIPSIS | CENTERIMAGE.
+            loop config.MaxCandidates {
+                this.Numbers.Push(this.Window.AddText("x0 y0 w1 h1 +0x428C c777777", ""))
                 this.Labels.Push(this.Window.AddText("x0 y0 w1 h1 +0x428C", ""))
+            }
         } finally {
             EacDpi.Restore(previous)
         }
@@ -39,11 +44,9 @@ class EacSuggestionGui {
                     item := items[A_Index]
                     word := EacSuggestionGui.SingleLine(item.Word)
                     translation := this.Config.ShowTranslation ? EacSuggestionGui.SingleLine(SubStr(item.Translation, 1, 512)) : ""
-                    body := A_Index ". " word (translation != "" ? "  " translation : "")
-                    texts.Push((A_Index = selected ? "▶ " : "   ") body)
-                    ; Measure the widest marker and bold face for all rows so
-                    ; selection changes do not resize the popup.
-                    extent := EacSuggestionGui.Measure(dc, this.BoldFont, "▶ " body)
+                    body := word (translation != "" ? "    " translation : "")
+                    texts.Push(body)
+                    extent := EacSuggestionGui.Measure(dc, this.NormalFont, body)
                     measuredWidth := Max(measuredWidth, extent.Width)
                     textHeight := Max(textHeight, extent.Height)
                 }
@@ -59,15 +62,27 @@ class EacSuggestionGui {
             for value in texts
                 stamp .= "|" value
             if changed || !(stamp == this.Rendered) {
+                this.Panel.Move(1, 1, Max(1, layout.Width - 2), Max(1, layout.Height - 2))
                 for index, label in this.Labels {
+                    row := this.Rows[index], number := this.Numbers[index]
+                    row.Visible := number.Visible := index <= layout.Rows
                     label.Visible := index <= layout.Rows
                     if index > layout.Rows
                         continue
                     itemIndex := layout.First + index - 1
-                    label.Move(layout.MarginX, layout.MarginY + (index - 1) * layout.RowHeight,
-                        layout.Width - 2 * layout.MarginX, layout.RowHeight)
-                    label.Opt(itemIndex = selected ? "BackgroundD7E9FF" : "BackgroundF4F5F7")
+                    top := layout.MarginY + (index - 1) * layout.RowHeight
+                    row.Move(1, top, Max(1, layout.Width - 2), layout.RowHeight)
+                    number.Move(layout.MarginX, top, layout.NumberWidth, layout.RowHeight)
+                    label.Move(layout.MarginX + layout.NumberWidth, top,
+                        Max(1, layout.Width - 2 * layout.MarginX - layout.NumberWidth), layout.RowHeight)
+                    background := itemIndex = selected ? "BackgroundE5F1FB" : "BackgroundFFFFFF"
+                    row.Opt(background)
+                    number.Opt(background (itemIndex = selected ? " c005A9E" : " c777777"))
+                    label.Opt(background " c202020")
+                    number.Text := itemIndex
                     label.Text := texts[itemIndex]
+                    DllCall "SendMessageW", "Ptr", number.Hwnd, "UInt", 0x30,
+                        "Ptr", this.NormalFont, "Ptr", true
                     DllCall "SendMessageW", "Ptr", label.Hwnd, "UInt", 0x30,
                         "Ptr", itemIndex = selected ? this.BoldFont : this.NormalFont, "Ptr", true
                 }
@@ -85,7 +100,7 @@ class EacSuggestionGui {
         if dpi = this.Dpi && this.FontSize = this.Config.FontSize
             return false
         normal := EacSuggestionGui.CreateFont(this.Config.FontSize, dpi, 400)
-        bold := EacSuggestionGui.CreateFont(this.Config.FontSize, dpi, 700)
+        bold := EacSuggestionGui.CreateFont(this.Config.FontSize, dpi, 400)
         if !normal || !bold {
             for handle in [normal, bold]
                 if handle
@@ -94,6 +109,8 @@ class EacSuggestionGui {
         }
         ; Detach old fonts before deleting them; STATIC does not own its HFONT.
         for label in this.Labels
+            DllCall "SendMessageW", "Ptr", label.Hwnd, "UInt", 0x30, "Ptr", normal, "Ptr", false
+        for label in this.Numbers
             DllCall "SendMessageW", "Ptr", label.Hwnd, "UInt", 0x30, "Ptr", normal, "Ptr", false
         for handle in [this.NormalFont, this.BoldFont]
             if handle
@@ -130,10 +147,11 @@ class EacSuggestionGui {
         workWidth := surface.Right - surface.Left, workHeight := surface.Bottom - surface.Top
         marginX := Max(0, Min(Round(6 * scale), (workWidth - 1) // 2))
         marginY := Max(0, Min(Round(4 * scale), (workHeight - 1) // 2))
+        numberWidth := Max(1, Min(Round(22 * scale), Max(1, workWidth - 2 * marginX - 1)))
         rowHeight := Max(1, textHeight + Round(6 * scale))
         rows := Max(0, Min(count, (workHeight - 2 * marginY) // rowHeight))
         width := Min(workWidth, Max(Round(180 * scale),
-            Min(Round(520 * scale), textWidth + 2 * marginX + Round(4 * scale))))
+            Min(Round(520 * scale), textWidth + 2 * marginX + numberWidth + Round(4 * scale))))
         height := rows * rowHeight + 2 * marginY
         x := Min(Max(surface.Left, anchor.X + Round(config.OffsetX * scale)), surface.Right - width)
         y := anchor.Y + Round(config.OffsetY * scale)
@@ -142,7 +160,7 @@ class EacSuggestionGui {
         y := Max(surface.Top, Min(y, surface.Bottom - height))
         return {X: x, Y: y, Width: width, Height: height, RowHeight: rowHeight,
             Rows: rows, First: Max(1, Min(count - rows + 1, selected - rows + 1)),
-            MarginX: marginX, MarginY: marginY, Dpi: surface.Dpi, Surface: surface}
+            MarginX: marginX, MarginY: marginY, NumberWidth: numberWidth, Dpi: surface.Dpi, Surface: surface}
     }
 
     Hide() {

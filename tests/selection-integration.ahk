@@ -65,7 +65,7 @@ expected := EacSuggestionEngine.ApplyCase(App.Items[1].Word, "confi")
 SendFixture "{Tab}"
 Sleep 60
 Assert(App.Selected == 1 && App.Navigating, "first Tab selects candidate one")
-Assert(InStr(App.Gui.Labels[1].Text, "▶") == 1, "selected first GUI row has marker")
+Assert(App.Gui.Numbers[1].Text == "1", "selected row has a separate number gutter")
 Guard()
 EnterHeld := true
 try {
@@ -135,7 +135,7 @@ AssertUnselected() {
     Assert(App.Tracker.Word == "confi" && App.Observed == "confi", "actual OnChar captures confi")
     Assert(App.Visible && App.Items.Length == 9 && App.Gui.LastLayout.Rows = 5, "nine available candidates start as five displayed rows")
     Assert(App.Selected == 0 && !App.Navigating, "candidates initially unselected")
-    Assert(!InStr(App.Gui.Labels[1].Text, "▶"), "unselected first GUI row has no marker")
+    Assert(App.Gui.Numbers[1].Text == "1", "unselected row has a separate number gutter")
 }
 
 Prepare() {
