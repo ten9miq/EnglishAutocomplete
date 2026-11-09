@@ -12,6 +12,7 @@ class EacApplication {
     InputModifierMask := 0
     LastInputAt := 0
     Navigating := false
+    Expanded := false
     CommitCount := 0
     TextRetryAt := 0
     Accepting := false
@@ -103,6 +104,9 @@ class EacApplication {
                 || ((text = "`r" || text = "`n" || text = "`r`n")
                     && this.Navigating && this.Selected > 0 && (policy.Enter || policy.ImeStyleKeys))
                 return
+            if this.Navigating && policy.Keys && policy.ImeStyleKeys
+                && RegExMatch(text, "^[1-9]$") && Integer(text) <= this.CandidateCount()
+                return ; the suppressed number key may notify before its action
         }
         this.ClearSelection()
         this.TextRetryAt := 0
@@ -259,7 +263,7 @@ class EacApplication {
                     this.Reset()
                 return
             }
-            this.Gui.Show(this.Items, this.Selected, this.Target.Field.Anchor)
+            this.Gui.Show(this.Items, this.Selected, this.Target.Field.Anchor, this.CandidateCount())
             return
         }
         this.Refresh()
@@ -333,7 +337,7 @@ class EacApplication {
             }
             this.Target := snapshot
             this.ShownGeneration := this.Tracker.Generation
-            this.Gui.Show(this.Items, this.Selected, anchor)
+            this.Gui.Show(this.Items, this.Selected, anchor, this.CandidateCount())
             this.Visible := generation = this.Tracker.Generation
             if !this.Visible
                 this.Gui.Hide()
@@ -401,6 +405,9 @@ class EacApplication {
         policy := this.Target.Policy
         if binding.StyleOnly && !policy.ImeStyleKeys
             return false
+        if binding.Action = "number" && binding.Modifiers = 0
+            && (!this.Navigating || binding.Number > this.CandidateCount())
+            return false
         if binding.Vk = 9 && (binding.Modifiers & ~4) = 0 && !policy.ImeStyleKeys && !policy.Tab
             return false
         if binding.Vk = 13 && binding.Modifiers = 0
@@ -457,8 +464,9 @@ class EacApplication {
     }
 
     ClearSelection() {
-        this.Selected := 0, this.Navigating := false
+        this.Selected := 0, this.Navigating := false, this.Expanded := false
     }
+    CandidateCount() => this.Expanded ? this.Items.Length : Min(this.Config.InitialCandidates, this.Items.Length)
     ArmEnter() {
         if !this.EnterActionArmed {
             this.EnterArmedSerial := this.EnterReleaseSerial
@@ -473,8 +481,10 @@ class EacApplication {
     }
 
     RenderSelection() {
+        if this.Selected >= this.Config.InitialCandidates
+            this.Expanded := true
         if this.Target && this.Target.Field.HasOwnProp("Identity") && this.Target.Field.Anchor {
-            this.Gui.Show(this.Items, this.Selected, this.Target.Field.Anchor)
+            this.Gui.Show(this.Items, this.Selected, this.Target.Field.Anchor, this.CandidateCount())
             this.Visible := true
         } else
             this.Refresh()
@@ -566,8 +576,11 @@ class EacApplication {
         for alias in aliases
             if !primary.Has(StrLower(alias[1]))
                 definitions.Push([alias[1], alias[2], 0, true])
-        loop 9
+        loop 9 {
             definitions.Push([this.Config.DirectModifier A_Index, "number", A_Index])
+            definitions.Push([String(A_Index), "number", A_Index, true])
+            definitions.Push(["Numpad" A_Index, "number", A_Index, true])
+        }
         used := Map(), bindings := []
         for definition in definitions {
             key := definition[1]
@@ -578,7 +591,8 @@ class EacApplication {
             used[StrLower(key)] := true
             if !RegExMatch(key, "^([\^!+#]*)([A-Za-z0-9]+)$", &match)
                 throw Error("Candidate keys support simple ^!+# modifiers and one key")
-            if match[1] = "" && !RegExMatch(match[2], "i)^(?:Tab|Enter|Esc|Escape|Up|Down|F\d+)$")
+            numberAlias := definition.Length >= 4 && definition[4] && definition[2] = "number"
+            if match[1] = "" && !numberAlias && !RegExMatch(match[2], "i)^(?:Tab|Enter|Esc|Escape|Up|Down|F\d+)$")
                 throw Error("Unmodified text keys cannot be candidate hotkeys")
             mask := (InStr(match[1], "^") ? 1 : 0) | (InStr(match[1], "!") ? 2 : 0)
                 | (InStr(match[1], "+") ? 4 : 0) | (InStr(match[1], "#") ? 8 : 0)

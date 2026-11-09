@@ -98,6 +98,32 @@ SendFixture "{Space}"
 Sleep 100
 Assert(Value() == "confi " && App.CommitCount == 1, "selected Space inserts ordinary space only")
 Assert(!App.Navigating && !App.Visible, "Space ends selection mode and hides candidates")
+
+; Plain digits stay literal before Tab, then commit only visible numbered rows.
+Prepare()
+TypeFixture("confi")
+SendFixture "3"
+Sleep 80
+Assert(Value() == "confi3", "ordinary digit before Tab remains literal")
+Prepare()
+TypeFixture("confi")
+expected := EacSuggestionEngine.ApplyCase(App.Items[3].Word, "confi")
+SendFixture "{Tab}"
+Sleep 40
+SendFixture "3"
+Sleep 100
+Assert(Value() == expected && App.CommitCount == 2, "Tab then plain three commits candidate three without a digit")
+Prepare()
+TypeFixture("confi")
+loop 5 {
+    SendFixture "{Tab}"
+    Sleep 30
+}
+Assert(App.Selected = 5 && App.Gui.LastLayout.Rows = 9, "fifth real Tab expands GUI to nine rows")
+expected := EacSuggestionEngine.ApplyCase(App.Items[9].Word, "confi")
+SendFixture "9"
+Sleep 100
+Assert(Value() == expected && App.CommitCount == 3, "expanded plain nine commits candidate nine")
 Guard()
 Record("PASS selection_integration_checks=" Checks " elapsed_ms=" (A_TickCount - StartedAt)
     " AHK=" A_AhkVersion " real_OnChar=true real_hotkeys=true native_multiline_Edit=true")
@@ -107,7 +133,7 @@ ExitApp 0
 AssertUnselected() {
     global App
     Assert(App.Tracker.Word == "confi" && App.Observed == "confi", "actual OnChar captures confi")
-    Assert(App.Visible && App.Items.Length == 9, "nine candidates displayed")
+    Assert(App.Visible && App.Items.Length == 9 && App.Gui.LastLayout.Rows = 5, "nine available candidates start as five displayed rows")
     Assert(App.Selected == 0 && !App.Navigating, "candidates initially unselected")
     Assert(!InStr(App.Gui.Labels[1].Text, "▶"), "unselected first GUI row has no marker")
 }

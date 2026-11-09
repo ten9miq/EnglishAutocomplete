@@ -6,11 +6,11 @@ Checks := 0
 Popup := false
 OnError Fail
 OnExit Cleanup
-Settings := {FontSize: 11, MaxCandidates: 5, ShowTranslation: true, OffsetX: 32, OffsetY: 80}
+Settings := {FontSize: 11, MaxCandidates: 9, ShowTranslation: true, OffsetX: 32, OffsetY: 80}
 Popup := EacSuggestionGui(Settings)
 Popup.Window.Title := "EnglishAutocomplete DPI test"
 Items := []
-Loop 5
+Loop 9
     Items.Push({Word: "configuration", Translation: "設定・構成 & 表示倍率 " StrReplace(Format("{:080}", 0), "0", "長い訳文")})
 dc := DllCall("GetDC", "Ptr", 0, "Ptr")
 try {
@@ -43,7 +43,7 @@ try {
     Loop MonitorGetCount() {
         MonitorGetWorkArea A_Index, &left, &top, &right, &bottom
         point := {X: right - 2, Y: bottom - 2, Hwnd: 0}
-        Popup.Show(Items, 3, point)
+        Popup.Show(Items, 3, point, 5)
         layout := Popup.LastLayout
         Assert(layout.Dpi >= 96 && layout.Surface.Left = left && layout.Surface.Top = top,
             "caret monitor is selected independently of input HWND")
@@ -63,6 +63,9 @@ try {
         Record("MONITOR index=" A_Index " dpi=" layout.Dpi " rect=" x "," y "," width "," height)
         Popup.Hide()
     }
+    Popup.Show(Items, 5, {X: 100, Y: 100, Hwnd: 0}, 9)
+    Assert(Popup.LastLayout.Rows = 9, "expanded popup displays nine actual rows")
+    Popup.Hide()
     ; Validate caret logical->physical conversion for different source awareness
     ; without changing Windows settings, foreground windows, or typing anything.
     for awareness in [-1, -2, -4] {

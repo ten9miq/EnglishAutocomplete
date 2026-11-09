@@ -21,7 +21,7 @@ class EacSuggestionGui {
         this.Disposed := false
     }
 
-    Show(items, selected, anchor) {
+    Show(items, selected, anchor, count := 0) {
         if !items.Length {
             this.Hide()
             return
@@ -35,7 +35,7 @@ class EacSuggestionGui {
             if !dc
                 throw Error("Candidate measurement unavailable")
             try {
-                loop Min(items.Length, this.Labels.Length) {
+                loop Min(items.Length, this.Labels.Length, count > 0 ? count : items.Length) {
                     item := items[A_Index]
                     word := EacSuggestionGui.SingleLine(item.Word)
                     translation := this.Config.ShowTranslation ? EacSuggestionGui.SingleLine(SubStr(item.Translation, 1, 512)) : ""

@@ -11,10 +11,12 @@ for binding in app.BuildBindings()
     bindings[StrLower(binding.Key)] := binding
 Assert(!bindings.Has("^!tab"), "Ctrl Alt Tab is not registered")
 Assert(!bindings.Has("space") && !bindings.Has("+space"), "Space and Shift Space are never candidate aliases")
-for key in ["tab", "+tab", "up", "down", "enter", "^!9"]
+for key in ["tab", "+tab", "up", "down", "enter", "^!9", "3", "numpad3"]
     Assert(bindings.Has(key), "expected candidate key " key)
 Assert(!app.CanIntercept(bindings["enter"]), "preview alone never intercepts Enter")
 Assert(app.Selected = 0 && !app.Navigating, "prediction starts without any selected row")
+Assert(app.CandidateCount() = 5, "preview contains five candidates")
+Assert(!app.CanIntercept(bindings["3"]), "preview never intercepts ordinary digits")
 app.Target.Policy.Enter := true
 Assert(!app.CanIntercept(bindings["enter"]), "legacy Enter setting cannot auto-select a preview row")
 app.Target.Policy.Enter := false
@@ -24,11 +26,25 @@ Assert(app.Pending.Length = 1 && app.Pending[1].Word == "confi", "Space is obser
 app.Ready()
 app.Action(bindings["tab"])
 Assert(app.Navigating && app.Selected = 1 && !app.Committed, "first Tab selects the first candidate")
+Assert(app.CanIntercept(bindings["3"]) && app.CanIntercept(bindings["numpad3"]), "Tab enables plain and keypad numbers")
+Assert(!app.CanIntercept(bindings["6"]), "hidden sixth number passes through")
+app.OnChar(0, "3")
+Assert(app.Tracker.Word == "confi" && app.Pending.Length = 0, "candidate number notification never enters the prefix or learning")
 app.OnChar(0, "`t")
 app.OnChar(0, "`r")
 Assert(app.Navigating && app.Tracker.Word == "confi", "Tab Enter notifications preserve conversion state")
 app.Action(bindings["tab"])
 Assert(app.Selected = 2, "second Tab selects the second candidate")
+app.Action(bindings["tab"]), app.Action(bindings["tab"])
+Assert(app.Selected = 4 && app.CandidateCount() = 5, "fourth selection still shows five")
+app.Action(bindings["tab"])
+Assert(app.Selected = 5 && app.CandidateCount() = 9, "fifth selection immediately expands to nine")
+app.Action(bindings["+tab"])
+Assert(app.Selected = 4 && app.CandidateCount() = 9, "expanded list remains expanded for the current token")
+app.Action(bindings["9"])
+Assert(app.Committed = 9, "expanded ninth candidate accepts a plain digit")
+app.Ready()
+app.Action(bindings["tab"]), app.Action(bindings["tab"])
 app.Action(bindings["+tab"])
 Assert(app.Selected = 1, "Shift Tab selects previous")
 app.Selected := 1
@@ -47,6 +63,7 @@ app.ReleaseEnter()
 for key, binding in bindings
     Assert(!app.CanIntercept(binding), "no visible candidate passes every key through")
 app.Ready()
+Assert(app.CandidateCount() = 5, "a new prefix starts collapsed again")
 app.Action(bindings["^!9"])
 Assert(app.Committed = 9, "ninth direct candidate can be accepted")
 app.Ready()
@@ -60,7 +77,7 @@ for key in ["tab", "down", "enter"]
 app.Allowed := true
 app.Ready()
 app.Target.Policy.ImeStyleKeys := false
-for key in ["tab", "up", "enter"]
+for key in ["tab", "up", "enter", "3", "numpad3"]
     Assert(!app.CanIntercept(bindings[key]), "per-app style opt out passes native keys through")
 Assert(app.CanIntercept(bindings["^!space"]), "explicit accept shortcut remains available")
 app.Ready()
@@ -104,7 +121,7 @@ class NavigationApp extends EacApplication {
     Committed := 0
     __New() {
         this.Config := {Enabled: true, AcceptKey: "^!Space", NextKey: "Tab", PreviousKey: "^!Up",
-            CancelKey: "Esc", DirectModifier: "^!", DebounceMs: 30}
+            CancelKey: "Esc", DirectModifier: "^!", DebounceMs: 30, InitialCandidates: 5}
         this.RefreshCallback := ObjBindMethod(this, "Refresh")
         this.Ready()
         this.Ime := NavigationIme()
@@ -112,6 +129,7 @@ class NavigationApp extends EacApplication {
     Ready() {
         this.Allowed := true
         this.Visible := true, this.Navigating := false, this.Selected := 0, this.Committed := 0
+        this.Expanded := false
         this.ReleaseEnter()
         this.EnterActionArmed := false, this.Accepting := false
         if this.HasOwnProp("Ime")

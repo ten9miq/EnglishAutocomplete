@@ -12,6 +12,7 @@ class EacConfig {
         this.Enabled := this.Int("General", "Enabled", 1, 0, 1)
         this.MinLength := this.Int("General", "MinLength", 3, 2, 32)
         this.MaxCandidates := this.Int("General", "MaxCandidates", 9, 1, 9)
+        this.InitialCandidates := Min(this.MaxCandidates, this.Int("General", "InitialCandidates", 5, 1, 9))
         this.FontSize := this.Int("General", "FontSize", 11, 8, 24)
         this.OffsetX := this.Int("General", "OffsetX", 32, -1000, 1000)
         this.OffsetY := this.Int("General", "OffsetY", 80, -1000, 1000)
