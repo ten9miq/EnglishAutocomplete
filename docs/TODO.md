@@ -1,5 +1,13 @@
 # 改善TODO（2026-11-09）
 
+## 追加依頼: Googleドキュメント / スプレッドシート / Word
+
+- [x] 実機のUIA属性と本体numeric statusで3アプリの停止原因を切り分け。WordはDocument型の拒否、Sheetsは空選択の矩形不足、Docsはアクセシビリティ用の画面外Editと可視caretの分離。
+- [x] 編集可能Documentを局所範囲だけ検証。TextPattern2 caretと可視入力欄矩形の位置fallback、UIA本文/選択＋同じfocus所有の可視MSAA system caretによるアクセシビリティ用Edit対応を実装。native拒否・password・readonly・選択・IME・identity制限を維持。
+- [x] Word実画面でconfi→5候補→Tab青選択→Enterでconfidence（改行なし）。Sheetsは利用者の手入力で候補表示・Tab→Enter確定・セル編集維持と本体CommitCount増加を照合。
+- [x] Docsはスクリーンリーダー/点字ON環境で候補表示、Tab青選択→Enterで改行せず確定を利用者確認。本体のTabDecision=7/Selected=1/CommitCount増加と照合。軽いkeepaliveと確定時の物理caret再照合を分離し、監視側もcached numericだけにした。設定片方だけ・他ブラウザーは未検証。
+- [x] AHK v2.0.28 x64、構文4入口とcore115/IME56/navigation107/forget29/UIA646/サクラ27=980 checksをPASS。実機診断と試験結果はGit対象外、他のAHK/IMEは再起動しない。
+
 ## 追加依頼: Google検索欄とアプリ名に依らない補完
 
 - [x] BraveのGoogle検索欄がEditではなく編集可能ComboBox（50003）として公開されることを数値UIA診断で確認。安全なComboBox対応後、利用者の手入力で候補表示・Tab選択を確認し、Reason=OK/selected=1と照合した。

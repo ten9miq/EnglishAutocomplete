@@ -14,8 +14,11 @@
 | Codexデスクトップ | ChatGPT.exe/Codex.exeを許可。UIAで編集可能なEdit入力欄だけ対象。学習ON | 2026-11-09、9候補の選択→Enterでconfi→confident、送信なしを実画面で確認。その後Space操作は廃止 |
 | Excel | アプリ単位では既定有効。安全情報が不足するセル本文等は停止。個別欄は保証なし | 未検証。通常のTab/Enter/Ctrl+Space、セル移動、既存入力が変化しないこと |
 | VS Code | アプリ単位では既定有効。UIAの安全条件を通る欄だけ対象、本文や標準補完との併用は保証なし | 未検証。標準補完とのキー競合・古い候補の破棄を確認する。必要ならEnabled=0/Keys=0 |
-| Electron / その他の未登録アプリ | アプリ許可の追加不要。候補表示・学習とも既定ON。非native欄はUIA Edit/編集可能ComboBox等の安全情報の公開が必要 | 個々の実アプリは未検証。DOM/独自UIのフォーカスだけが移動しても旧候補を確定しないこと |
-| Google Docs/Sheets/Slides/Gmail等 | サービス名で一括許可しない。安全条件を満たす欄のみ | 個別の実入力は未検証。Documentや情報不足欄では停止し既存操作を維持すること |
+| Wordデスクトップ | focused DocumentのTextPattern、空選択、文書/左右近傍のreadonlyと包含を検証 | 2026-11-09、実キーconfi→5候補→Tab青選択→Enterでconfidence確定、余計な改行なしを実画面と期待語の一致で確認。保護文書/複雑な表・脚注等の実入力は未検証 |
+| Googleスプレッドシート（Brave） | セル編集中の編集可能ComboBox。空選択の矩形がない場合は可視入力欄の下端に表示 | 2026-11-09、利用者の実キーで候補表示・Tab→Enter確定・セル編集中を維持したとの回答と、本体Selected=1/CommitCount増加を照合。セル選択だけは対象外。数式・複数セル・他ブラウザーは未検証 |
+| Googleドキュメント（Brave） | スクリーンリーダー/点字ON環境のfocused Edit。UIAの文字/空選択と同じfocus所有の可視MSAA caretを二重検証 | 2026-11-09、利用者がconfiを手入力し、Tabで青選択→Enterで改行せず確定できたと回答。本体TabDecision=7/Selected=1/CommitCount増加と照合。片方だけON・他ブラウザー・共同編集/複雑な文書は未検証 |
+| Electron / その他の未登録アプリ | アプリ許可の追加不要。候補表示・学習とも既定ON。非native欄はUIA Edit/編集可能ComboBox/編集可能Document等の安全情報の公開が必要 | 個々の実アプリは未検証。DOM/独自UIのフォーカスだけが移動しても旧候補を確定しないこと |
+| Google Slides/Gmail等 | サービス名で一括許可しない。安全条件を満たす欄のみ | 個別の実入力は未検証。読み取り専用Documentや情報不足欄では停止し既存操作を維持すること |
 
 ## IME別マトリクス
 
@@ -99,7 +102,7 @@
 - 候補表示中の倍率変更・モニター着脱・解像度変更・プライマリ変更でも次の表示で再計測し、旧倍率や旧作業領域に残らないこと。設定変更を伴うこの試験は未実施。
 - キャレットを取得できない欄で候補を出さず、マウス位置へ推測表示しないこと。
 - 30分以上の連続入力、スリープ復帰、レイアウト変更、GUI表示中のアプリ終了を確認。物理キーボードの連続入力で入力欠落・不正な置換・再帰イベントがないこと。
-- native経路の座標取得はWin32のみ。非native入力欄ではUIAの局所文字照合と座標照会を行う。既存IME側のソースやプロセスを変更せず、UIA本文全文・イベント購読・IA2参照を追加しないこと。既存側の高コスト探索回数の厳密計測は未実施。
+- native経路の座標取得はWin32のみ。非native入力欄ではUIAの局所文字照合と座標照会、検証済みの画面外Editでは限定したMSAA caret照会を行う。既存IME側のソースやプロセスを変更せず、UIA本文全文・イベント購読・IA2参照を追加しないこと。既存側の高コスト探索回数の厳密計測は未実施。
 
 記録時は、アプリ/IME/Windows/AHKのバージョン、レイアウト、DPI、設定、期待結果と実結果、合否を残す。入力内容は上記の人工語に限定する。
 
@@ -107,13 +110,20 @@
 
 - `tests/uia-fixture.html`の通常input・textarea・role=textboxのcontenteditable・検索用role=comboboxで、IME OFFの`confi`から候補表示・選択・語尾追加を確認する。Brave/ChromeのGoogle検索欄も同様に確認し、送信はしない。初回のキー試験ではLearning=0にし、別の学習試験で既定Learning=1へ戻して未知語2回・既知語の回数更新を確認する。
 - 未登録のWPF等の非Chromiumアプリでも、クラス名に依らず安全なUIA入力欄に候補が出ること。`DefaultEnabled=0`、アプリ別Enabled=0、Excludedの各停止も確認する。個々のアプリは実機で確認するまで動作保証しない。
-- password・readonly・disabled・選択範囲・キャレット不明・TextPattern/readonly属性非対応では停止すること。Documentやページ本文全体を入力欄と扱わないこと。
+- password・readonly・disabled・選択範囲・TextPattern/readonly属性非対応では停止すること。Documentは文書/空選択/局所rangeの包含と編集可能性が取れた場合だけ扱い、本文全文を読まないこと。位置はUIA caret→同一のactive TextPattern2 caret→可視入力欄の矩形の順で解決し、どれも確認できなければ停止すること。
+- 画面外Editはwritable Value、従来のUIA本文/空選択の確認に加え、同じfocus HWND所有のMSAA system caret・安全なstate・client内の矩形が必要。MSAA情報不足、owner違い、別role、不可視/画面外/protected/unavailableでは本文取得前に拒否すること。表示とCommitでは物理caretを再取得し、候補の選択/idle keepaliveはUIAの同一focus/identity・readonly・IMEを確認するだけで、物理caretの一時変動によってTabを本文へ渡さないこと。
 - 同じrenderer HWND内の別欄へクリック/Tab/JavaScriptで移動し、文字が同じ欄でも前の候補が新しい欄へ確定されないこと。行内移動・自動書換え・DOM再生成・タブ移動も確認する。
 - UIA照会中のIME ON切替、フォーカス変更、入力割込みでは確定を中止すること。変換モードEnterで改行/送信を同時に実行せず、選択前Enterは入力先へ渡すこと。
 - UIAキャレット矩形が物理座標で正しく表示され、異なるDPIのモニター移動でも候補が入力欄近傍に収まること。
 
-UIAの安全条件・COM境界・非Chromiumクラスの入口・native拒否からUIAへ迂回しない条件を419項目で確認（実アプリのUIA実装とは別の模擬APIと非表示HWND試験）。Chrome専用フォーム、Codex、BraveのGoogle検索欄は、上表と検証記録に記した範囲で実入力を確認済み。
+UIAの安全条件・COM境界・非Chromiumクラスの入口・native拒否からUIAへ迂回しない条件・Document/field位置/アクセシビリティ用Editを646項目で確認（実アプリのUIA実装とは別の模擬APIと非表示HWND試験）。Chrome専用フォーム、Codex、BraveのGoogle検索欄、Word、BraveのSheets/Docsは、上表と検証記録に記した範囲で実入力を確認済み。
 
+### Word / Googleエディターの確認手順
+
+1. 新しい使い捨て文書・セルを用意し、IME OFFで半角`confi`を1キーずつ入力する。貼付やDOMの値変更はInputHookの実キー試験として扱わない。
+2. Wordは文頭・文中の単語末尾・文末で候補表示、Tab青選択→Enter確定、通常改行、選択・readonly時の拒否を確認する。
+3. Sheetsはセルをダブルクリックして編集に入る。候補から確定してもセルの編集中が維持されること、セルを選択しただけ・複数セル選択・編集中断後の候補キーが通常操作へ戻ることを確認する。欄基準の位置fallbackではキャレットとの厳密なX一致を要求しない。
+4. Docsは［ツール→ユーザー補助設定］でスクリーンリーダー/点字サポートをONにする。両方ONの実環境が確認対象で、どちらか片方だけで動くかは未検証。MSAA caretが実文書内にあり、候補の青選択→Enter確定で本文にTabや余計な改行が入らないことを確認する。設定をスクリプトが変更しないこと、本文外・読み取り専用・選択ありでは候補を確定しないことも確認する。
 
 ## サクラ本文の追加試験
 

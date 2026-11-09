@@ -11,6 +11,11 @@ try {
     TestRead()
     TestStructuralRead()
     TestComboRead()
+    TestDocumentRead()
+    TestActiveCaret()
+    TestFieldAnchor()
+    TestAccessibilityProxy()
+    TestMsaaAnchor()
     TestDispatch()
     TestComHelpers()
     FileAppend "PASS uia_checks=" Checks " AHK=" A_AhkVersion "`n", "*"
@@ -34,8 +39,8 @@ TestRead() {
     Assert(InStr(api.Events, "Text,Text,Focus,PropertyFocus,Context,"), "focus and native context checked after final text reads")
     Assert(!api.Deadline && !EacUiaFieldProvider.Busy && EacFieldGuard.LastReason = "OK", "success clears lease")
 
-    api.Reset(), api.Props[30003] := 50030
-    Rejected("document viewer is not an input", "UIAUnsafeField", true)
+    api.Reset(), api.Props[30003] := 50030, api.DocumentReadOnly := true
+    Rejected("readonly document viewer is not an input", "UIAReadOnlyOrRange", true)
     api.Reset(), api.Content := Repeat("x", 220) "!", api.Caret := 220
     field := EacUiaFieldProvider.Read(api.Native)
     Assert(field && StrLen(field.Before) = 128 && field.After == "!", "long document exposes at most local 128 characters")
@@ -51,7 +56,7 @@ TestRead() {
     api.Reset(), api.NoAnchor := true
     Rejected("unavailable caret anchor", "UIACaretUnavailable")
 
-    for pair in [[30003, 50020], [30008, false], [30009, false], [30010, false], [30019, true], [30022, true]] {
+    for pair in [[30003, 50020], [30008, false], [30009, false], [30010, false], [30019, true]] {
         api.Reset(), api.Props[pair[1]] := pair[2]
         Rejected("unsafe property " pair[1], "UIAUnsafeField", true)
     }
@@ -246,6 +251,133 @@ TestComboRead() {
     Rejected("ComboBox becomes document during read", "FocusChanged")
 }
 
+TestDocumentRead() {
+    api := UiaTestApi
+    api.Reset(), api.Props[30003] := 50030, api.UnknownProperty := 30046
+    field := EacUiaFieldProvider.Read(api.Native)
+    Assert(field && field.Before == "alpha confi" && field.After == "!", "writable focused Document exposes local editing context")
+    Assert(!api.ValueCalls && api.TextLimits = "129,2,129,2,", "Document needs no ValuePattern or full document text")
+    Assert(api.RangeChecks >= 7 && api.DocumentReadOnlyCalls = 2, "Document containment and editability rechecked")
+    Assert(EacUiaFieldProvider.IsFocused(field, api.Native), "editable Document focus keepalive")
+    for pair in [["DocumentReadOnly", "UIAReadOnlyOrRange"], ["SelectionReadOnly", "UIAReadOnlyOrRange"],
+        ["LeftReadOnly", "UIARange"], ["RightReadOnly", "UIARange"], ["UnknownReadOnly", "UIAUnavailable"]] {
+        api.Reset(), api.Props[30003] := 50030, api.%pair[1]% := true
+        Rejected("Document " pair[1], pair[2], true)
+    }
+    api.Reset(), api.Props[30003] := 50030, api.SelectionLength := 1
+    Rejected("Document selected text", "UIAUnavailable", true)
+    api.Reset(), api.Props[30003] := 50030, api.NoAnchor := true
+    Rejected("Document unknown caret rectangle", "UIACaretUnavailable")
+    api.Reset(), api.Props[30003] := 50030, api.Props[30019] := true
+    Rejected("password Document", "UIAUnsafeField", true)
+    StructuralFixture(), api.Props[30003] := 50030
+    Rejected("Document cannot borrow Edit full Value fallback for inconsistent bounds", "UIAReadOnlyOrRange", true)
+    api.Reset(), api.Props[30003] := 50030, api.LoseContainmentAfterRead := true
+    Rejected("Document owner changes after read", "TextChanged")
+    api.Reset(), api.Props[30003] := 50030, api.FinalRangeReadOnly := true
+    Rejected("Document becomes protected during read", "TextChanged")
+    api.Reset(), api.Props[30003] := 50030, api.Content := Repeat("x", 40000) " confi!", api.Caret := 40006
+    field := EacUiaFieldProvider.Read(api.Native)
+    Assert(field && StrLen(field.Before) = 128 && field.After == "!" && !api.ValueCalls,
+        "large Document keeps bounded local read and no native Edit length limit")
+    api.Reset(), api.Props[30003] := 50030, api.Caret := StrLen(api.Content)
+    field := EacUiaFieldProvider.Read(api.Native)
+    Assert(field && field.After == "" && field.EofLength = -1 && !api.ValueCalls, "Document EOF uses valid document bounds without full text")
+    api.Reset(), api.Props[30003] := 50030, api.Content := "", api.Caret := 0
+    field := EacUiaFieldProvider.Read(api.Native)
+    Assert(field && field.Before == "" && field.After == "" && !api.ValueCalls, "empty writable Document accepted")
+}
+
+TestActiveCaret() {
+    api := UiaTestApi
+    api.Reset(), api.NoAnchor := true, api.ActiveAvailable := true
+    field := EacUiaFieldProvider.Read(api.Native)
+    Assert(field && field.Anchor.Method = "MockCaret", "TextPattern2 active caret supplies missing selection rectangle")
+    Assert(api.ActiveCalls = 1 && api.ActiveAnchorCalls = 1 && api.TextCalls = 4, "active caret fallback adds no text reads")
+    for pair in [["CaretActive", false], ["ActiveShift", 1], ["CaretReadOnly", true], ["ActiveHasAnchor", false]] {
+        api.Reset(), api.NoAnchor := true, api.ActiveAvailable := true, api.%pair[1]% := pair[2]
+        Rejected("active caret " pair[1], "UIACaretUnavailable")
+    }
+    api.Reset(), api.NoAnchor := true, api.ActiveAvailable := true, api.ActiveShift := -20
+    Rejected("active caret belongs to another range", "UIACaretUnavailable")
+    api.Reset(), api.NoAnchor := true, api.ActiveAvailable := true, api.Failure := "RangeWithin"
+    Rejected("active caret ownership unavailable", "UIACaretUnavailable")
+    api.Reset(), api.ActiveAvailable := true
+    Assert(EacUiaFieldProvider.Read(api.Native) && !api.ActiveCalls, "working selection rectangle avoids extra pattern lookup")
+}
+
+TestFieldAnchor() {
+    api := UiaTestApi
+    api.Reset(), api.NoAnchor := true, api.FieldRect := [10,20,200,25]
+    field := EacUiaFieldProvider.Read(api.Native)
+    Assert(field && field.Anchor.Method = "UIAField" && field.Anchor.X = 10 && field.Anchor.Top = 20
+        && field.Anchor.Bottom = 45 && field.Anchor.Y = 45, "missing caret rectangle falls back to actual focused field bounds")
+    Assert(api.TextCalls = 4 && api.SelectionCalls = 2, "field placement retains logical caret and text revalidation")
+    api.Reset(), api.NoAnchor := true, api.FieldRect := [10,20,200,25], api.Props[30003] := 50003
+    Assert(EacUiaFieldProvider.Read(api.Native), "editable ComboBox can use field placement")
+    for rect in [[-1,20,200,25],[10,-10000,200,25],[10,20,1000,25],[10,20,200,1000],[10,20,0,25],[10,20,200,0]] {
+        api.Reset(), api.NoAnchor := true, api.FieldRect := rect
+        Rejected("outside or empty field rectangle", "UIACaretUnavailable")
+    }
+    api.Reset(), api.NoAnchor := true, api.FieldRect := [10,20,200,25], api.Props[30003] := 50030
+    Rejected("whole Document is not a field position fallback", "UIACaretUnavailable")
+    api.Reset(), api.NoAnchor := true, api.FieldRect := [10,20,200,25], api.SelectionLength := 1
+    Rejected("field rectangle never bypasses selected text", "UIAUnavailable", true)
+    api.Reset(), api.NoAnchor := true, api.FieldRect := [10,20,200,25], api.Props[30022] := true
+    Rejected("hidden editor never uses visible field fallback", "UIACaretUnavailable", true)
+}
+
+TestAccessibilityProxy() {
+    api := UiaTestApi
+    api.Reset(), api.Props[30022] := true, api.ProxyAvailable := true
+    field := EacUiaFieldProvider.Read(api.Native)
+    Assert(field && field.AccessibilityProxy && field.Anchor.Method = "MSAACaret", "hidden accessibility Edit requires focus-owned visible MSAA caret")
+    Assert(api.ProxyCalls = 2 && api.TextCalls = 4, "proxy caret checked before and after bounded text reads")
+    Assert(EacUiaFieldProvider.IsFocused(field, api.Native), "verified proxy focus keepalive")
+    Assert(api.ProxyCalls = 2, "proxy navigation keepalive performs no physical caret RPC")
+    api.ProxyAvailable := false
+    Assert(EacUiaFieldProvider.IsFocused(field, api.Native), "transient physical caret loss does not pass a navigation Tab into document")
+    Rejected("fresh proxy snapshot still refuses missing physical caret before insertion", "UIACaretUnavailable")
+    for pair in [[30003,50003],[30019,true]] {
+        api.Reset(), api.Props[30022] := true, api.ProxyAvailable := true, api.Props[pair[1]] := pair[2]
+        Rejected("unsafe hidden proxy", "UIAUnsafeField", true)
+    }
+    api.Reset(), api.Props[30022] := true, api.ProxyAvailable := true, api.Props[30046] := true
+    Rejected("readonly hidden proxy", "UIAReadOnlyOrRange", true)
+    api.Reset(), api.Props[30022] := true, api.ProxyAvailable := true, api.UnknownProperty := 30046
+    Rejected("unknown hidden proxy editability", "UIAUnavailable", true)
+    api.Reset(), api.Props[30022] := true
+    Rejected("hidden proxy without visible native caret", "UIACaretUnavailable", true)
+    api.Reset(), api.Props[30022] := true, api.ProxyAvailable := true, api.SelectionLength := 1
+    Rejected("hidden proxy selected text", "UIAUnavailable", true)
+    api.Reset(), api.Props[30022] := true, api.ProxyAvailable := true, api.SelectionReadOnly := true
+    Rejected("hidden proxy readonly caret", "UIAReadOnlyOrRange", true)
+    api.Reset(), api.Props[30022] := true, api.ProxyAvailable := true, api.ProxyGoneAfterRead := true
+    Rejected("proxy loses physical caret during read", "UIACaretUnavailable")
+    api.Reset(), api.Props[30022] := true, api.ProxyAvailable := true, api.FinalReadOnly := true
+    Rejected("proxy becomes readonly before focus recheck", "FocusChanged")
+    api.Reset(), api.FinalOffscreen := true
+    Rejected("normal field becomes hidden during read", "FocusChanged")
+}
+
+TestMsaaAnchor() {
+    api := MsaaTestApi
+    context := {Hwnd: 7, Focus: 8}
+    api.Reset()
+    anchor := api.MsaaAnchor(context)
+    Assert(anchor && anchor.X = 20 && anchor.Top = 30 && anchor.Bottom = 55 && anchor.Method = "MSAACaret", "system caret physical rectangle retained")
+    for pair in [["Owner",9],["Role",42],["State",1],["State",0x8000],["State",0x10000],["State",0x20000000]] {
+        api.Reset(), api.%pair[1]% := pair[2]
+        Assert(!api.MsaaAnchor(context), "wrong-owner or unsafe system caret rejected")
+    }
+    for rect in [[20,-10000,1,25],[-1,30,1,25],[999,30,2,25],[20,999,1,25],[20,30,-1,25],[20,30,1,0]] {
+        api.Reset(), api.Rect := rect
+        Assert(!api.MsaaAnchor(context), "non-visible or empty system caret rejected")
+    }
+    api.Reset(), api.Fail := true
+    Assert(!api.MsaaAnchor(context), "unavailable caret fails closed")
+}
+
 TestDispatch() {
     ; Actual HWND/class dispatch with a deterministic UIA backend. This proves
     ; the entry route, not a real application's UIA implementation or input.
@@ -329,6 +461,14 @@ TestComHelpers() {
     fixture.HResult := 0, fixture.ExpireDeadline := true
     AssertThrows(() => EacUia.Value(object), "input Value deadline checked after COM call")
     EacUia.Deadline := 0, fixture.ExpireDeadline := false, fixture.VarType := 11
+    fixture.VarType := 0x2005, fixture.RectValues := [10.5,-20.25,200,25]
+    rect := EacUia.ElementRectangle(object)
+    Assert(rect.Length = 4 && rect[1] = 10.5 && rect[2] = -20.25 && rect[3] = 200 && rect[4] = 25
+        && fixture.LastId = 30001 && fixture.IgnoreDefault, "field rectangle SAFEARRAY decoded and default substitution disabled")
+    fixture.RectValues := [1,2,3]
+    AssertThrows(() => EacUia.ElementRectangle(object), "incomplete field rectangle rejected")
+    fixture.VarType := 11
+    AssertThrows(() => EacUia.ElementRectangle(object), "unsupported field rectangle rejected")
     fixture.RectValues := [-20.25, -100.5, 1, 25.5]
     anchor := EacUia.Anchor(object, {Hwnd: 1, Focus: 2})
     Assert(anchor && anchor.X = Round(-20.25) && anchor.Top = Round(-100.5)
@@ -362,6 +502,47 @@ TestComHelpers() {
     EacUia.Deadline := 0
     object := false
     Assert(fixture.References = 1, "all interface references released")
+    rangeStub := UiaComStub("values"), caretStub := UiaComStub("caret", rangeStub)
+    rangeStub.SetSlot(5, "EndpointCompare", 5)
+    object := caretStub.Object()
+    ; CaretRange compares endpoints after the active flag. The endpoint model
+    ; is independently tested above; inactive/NULL/failure cover COM ownership.
+    caretStub.BoolValue := 0
+    AssertThrows(() => EacUia.CaretRange(object), "inactive TextPattern2 caret rejected")
+    Assert(rangeStub.References = 1, "inactive caret releases returned interface")
+    caretStub.BoolValue := 1
+    range := EacUia.CaretRange(object)
+    Assert(ComObjValue(range) = rangeStub.Instance.Ptr, "active collapsed TextPattern2 range returned")
+    range := false
+    Assert(rangeStub.References = 1, "active range releases after use")
+    rangeStub.IntValue := 1
+    AssertThrows(() => EacUia.CaretRange(object), "noncollapsed TextPattern2 caret rejected")
+    rangeStub.IntValue := 0
+    caretStub.NullInterface := true
+    AssertThrows(() => EacUia.CaretRange(object), "NULL TextPattern2 range rejected")
+    caretStub.NullInterface := false, caretStub.HResult := -2147467259
+    AssertThrows(() => EacUia.CaretRange(object), "failed TextPattern2 call rejected")
+    Assert(rangeStub.References = 1, "failed caret call releases returned interface")
+    object := false
+    Assert(caretStub.References = 1, "caret pattern interface released")
+    msaaStub := UiaComStub("msaa"), object := msaaStub.Object()
+    msaaStub.VarType := 3, msaaStub.IntValue := 7
+    Assert(EacUia.MsaaInt(object,13) = 7 && msaaStub.ChildType = 3 && msaaStub.ChildId = 0,
+        "MSAA role uses by-value CHILDID_SELF VARIANT and typed INT result")
+    msaaStub.IntValue := 0
+    Assert(EacUia.MsaaInt(object,14) = 0, "MSAA state typed INT result")
+    msaaStub.VarType := 11
+    AssertThrows(() => EacUia.MsaaInt(object,13), "unsupported MSAA role variant rejected")
+    msaaStub.VarType := 3, msaaStub.HResult := -2147467259
+    AssertThrows(() => EacUia.MsaaInt(object,14), "MSAA state HRESULT failure rejected")
+    msaaStub.HResult := 0, msaaStub.RectValues := [-20,-30,1,25]
+    rect := EacUia.MsaaRectangle(object)
+    Assert(rect[1] = -20 && rect[2] = -30 && rect[3] = 1 && rect[4] = 25 && msaaStub.ChildType = 3 && msaaStub.ChildId = 0,
+        "MSAA accLocation marshals four INT outputs and CHILDID_SELF")
+    msaaStub.HResult := -2147467259
+    AssertThrows(() => EacUia.MsaaRectangle(object), "MSAA location HRESULT failure rejected")
+    object := false
+    Assert(msaaStub.References = 1, "MSAA object reference released")
 }
 
 class UiaTestApi extends EacUia {
@@ -387,6 +568,11 @@ class UiaTestApi extends EacUia {
         this.Reenter := false, this.NestedRejected := false
         this.LoseFieldFocus := false
         this.FinalReadOnly := false, this.FinalType := 0
+        this.FinalRangeReadOnly := false
+        this.ActiveAvailable := false, this.CaretActive := true, this.ActiveShift := 0, this.CaretReadOnly := false
+        this.ActiveHasAnchor := true, this.ActiveCalls := 0, this.ActiveAnchorCalls := 0
+        this.FieldRect := false
+        this.ProxyAvailable := false, this.ProxyCalls := 0, this.ProxyGoneAfterRead := false, this.FinalOffscreen := false
         this.Array := UiaComStub("array", this)
     }
     static FailAt(stage) {
@@ -440,6 +626,8 @@ class UiaTestApi extends EacUia {
             return true
         if this.FocusCalls > 1 && id = 30003 && this.FinalType
             return this.FinalType
+        if this.FocusCalls > 1 && id = 30022 && this.FinalOffscreen
+            return true
         return this.Props[id]
     }
     static AncestorMatches(*) => this.Ancestor
@@ -447,9 +635,17 @@ class UiaTestApi extends EacUia {
         this.FailAt("Identity")
         return element.Id
     }
-    static Pattern(*) {
+    static Pattern(element, id, *) {
         this.FailAt("Pattern")
+        if id = 10024 && !this.ActiveAvailable
+            throw Error("mock TextPattern2 unavailable")
         return this.PatternValue
+    }
+    static CaretRange(pattern) {
+        this.ActiveCalls += 1
+        if !this.CaretActive
+            throw Error("mock inactive caret")
+        return {Start: this.Caret + this.ActiveShift, End: this.Caret + this.ActiveShift, Kind: "Caret"}
     }
     ; Inherit production Selection(): real COM count + collapse validation.
     static Compare(a, endpoint, b, otherEndpoint) {
@@ -458,6 +654,8 @@ class UiaTestApi extends EacUia {
     }
     static ReadOnly(range) {
         this.FailAt("ReadOnly")
+        if this.FinalRangeReadOnly && this.TextCalls >= 4
+            return true
         if this.UnknownReadOnly
             throw Error("mock unknown readonly attribute")
         if range.Kind = "Document"
@@ -519,8 +717,12 @@ class UiaTestApi extends EacUia {
         value := this.HasValueOverride ? this.ValueText : SubStr(this.Content, this.FieldStart + 1, this.FieldEnd() - this.FieldStart)
         return this.ValueCalls = this.ChangeValueCall ? value "changed" : value
     }
-    static Anchor(*) {
+    static Anchor(range, *) {
         this.FailAt("Anchor")
+        if range.Kind = "Caret" {
+            this.ActiveAnchorCalls += 1
+            return this.ActiveHasAnchor ? {Found: true, X: 10, Y: 20, Method: "MockCaret"} : false
+        }
         return this.NoAnchor ? false : {Found: true, X: 10, Y: 20, Method: "MockCaret"}
     }
     static Context() {
@@ -528,7 +730,34 @@ class UiaTestApi extends EacUia {
         this.Events .= "Context,"
         return this.CurrentNative
     }
+    static ElementRectangle(element) {
+        if !this.FieldRect
+            throw Error("mock field rectangle unavailable")
+        return this.FieldRect
+    }
+    static ClientBounds(context) => {Left: 0, Top: 0, Right: 1000, Bottom: 1000}
+    static MsaaAnchor(context) {
+        this.ProxyCalls += 1
+        if !this.ProxyAvailable || (this.ProxyGoneAfterRead && this.TextCalls >= 2)
+            return false
+        return {Found: true, X: 20, Top: 30, Bottom: 55, Y: 55, Method: "MSAACaret"}
+    }
     static Same(a, b) => a.Id == b.Id
+}
+
+class MsaaTestApi extends EacUia {
+    static Reset() {
+        this.Owner := 8, this.Role := 7, this.State := 0, this.Rect := [20,30,1,25], this.Fail := false
+    }
+    static MsaaObject(context) {
+        if this.Fail
+            throw Error("mock unavailable system caret")
+        return {}
+    }
+    static MsaaOwner(caret) => this.Owner
+    static MsaaInt(caret, slot) => slot = 13 ? this.Role : this.State
+    static MsaaRectangle(caret) => this.Rect
+    static ClientBounds(context) => {Left: 0, Top: 0, Right: 1000, Bottom: 1000}
 }
 
 class UiaComStub {
@@ -547,10 +776,14 @@ class UiaComStub {
     RectValues := []
     __New(kind, owner := false) {
         this.Owner := owner, this.Callbacks := []
-        this.Vtable := Buffer(13 * A_PtrSize, 0), this.Instance := Buffer(A_PtrSize, 0)
+        this.Vtable := Buffer(23 * A_PtrSize, 0), this.Instance := Buffer(A_PtrSize, 0)
         NumPut "Ptr", this.Vtable.Ptr, this.Instance
         this.SetSlot(0, "Query", 3), this.SetSlot(1, "AddRef", 1), this.SetSlot(2, "Release", 1)
-        if kind = "array"
+        if kind = "msaa" {
+            this.SetSlot(13, "AccVariant", 3), this.SetSlot(14, "AccVariant", 3), this.SetSlot(22, "AccLocation", 6)
+        } else if kind = "caret"
+            this.SetSlot(10, "Caret", 3)
+        else if kind = "array"
             this.SetSlot(3, "Count", 2)
         else {
             this.SetSlot(4, "RuntimeId", 2), this.SetSlot(5, "Interface", 2)
@@ -580,7 +813,14 @@ class UiaComStub {
     Variant(id, output) {
         this.LastId := id
         NumPut "UShort", this.VarType, output
-        if this.VarType = 8 {
+        if this.VarType = 0x2005 {
+            array := DllCall("oleaut32\SafeArrayCreateVector", "UShort", 5, "Int", 0, "UInt", this.RectValues.Length, "Ptr")
+            for value in this.RectValues {
+                index := A_Index - 1
+                DllCall "oleaut32\SafeArrayPutElement", "Ptr", array, "Int*", index, "Double*", value
+            }
+            NumPut "Ptr", array, output, 8
+        } else if this.VarType = 8 {
             bstr := this.NullText ? 0 : DllCall("oleaut32\SysAllocStringLen", "Ptr", StrPtr(this.Value), "UInt", StrLen(this.Value), "Ptr")
             NumPut "Ptr", bstr, output, 8
         } else
@@ -624,6 +864,27 @@ class UiaComStub {
         if !this.NullInterface
             this.References += 1
         NumPut "Ptr", this.NullInterface ? 0 : this.Instance.Ptr, output
+        return this.HResult
+    }
+    Caret(pointer, active, output) {
+        NumPut "Int", this.BoolValue, active
+        if !this.NullInterface
+            this.Owner.References += 1
+        NumPut "Ptr", this.NullInterface ? 0 : this.Owner.Instance.Ptr, output
+        return this.HResult
+    }
+    EndpointCompare(pointer, endpoint, other, otherEndpoint, output) {
+        NumPut "Int", this.IntValue, output
+        return this.HResult
+    }
+    AccVariant(pointer, child, output) {
+        this.ChildType := NumGet(child,0,"UShort"), this.ChildId := NumGet(child,8,"Int")
+        return this.Variant(0,output)
+    }
+    AccLocation(pointer, x, y, width, height, child) {
+        this.ChildType := NumGet(child,0,"UShort"), this.ChildId := NumGet(child,8,"Int")
+        for pointer in [x,y,width,height]
+            NumPut "Int", this.RectValues[A_Index], pointer
         return this.HResult
     }
     ; Callbacks retain their bound owner until process exit. These short-lived

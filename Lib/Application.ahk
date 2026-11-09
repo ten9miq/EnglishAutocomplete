@@ -375,6 +375,8 @@ class EacApplication {
     }
 
     CanIntercept(binding, *) {
+        if binding.Vk = 9
+            this.LastTabDecision := 1
         if binding.Action = "forget" && this.DeleteLatched
             return true
         plainEnter := binding.Vk = 13 && binding.Modifiers = 0
@@ -389,10 +391,16 @@ class EacApplication {
                 return false ; a new press with native IME ON belongs to that IME
             return this.ArmEnter()
         }
-        if !this.Visible || this.Sending || this.ShownGeneration != this.Tracker.Generation || !this.Target
+        if !this.Visible || this.Sending || this.ShownGeneration != this.Tracker.Generation || !this.Target {
+            if binding.Vk = 9
+                this.LastTabDecision := 2
             return false
-        if !this.BindingPermitted(binding)
+        }
+        if !this.BindingPermitted(binding) {
+            if binding.Vk = 9
+                this.LastTabDecision := 3
             return false
+        }
         if binding.Action = "number" && binding.Number > this.Items.Length
             return false
         if binding.Vk = 13 && binding.Modifiers = 0 && this.Navigating {
@@ -410,11 +418,21 @@ class EacApplication {
             ; Navigation changes only our popup. Fresh focus/safety metadata is
             ; sufficient; defer expensive text/endpoint checks to Commit.
             context := this.CurrentContext()
-            if !context || context.Key != this.Target.Context.Key
+            if !context || context.Key != this.Target.Context.Key {
+                if binding.Vk = 9
+                    this.LastTabDecision := 4
                 return false
+            }
             ime := this.Ime.GetState(context)
-            return ime.Allowed && ime.Key = this.Target.Ime.Key
-                && EacFieldGuard.StillFocused(this.Target.Field, context)
+            if !ime.Allowed || ime.Key != this.Target.Ime.Key {
+                if binding.Vk = 9
+                    this.LastTabDecision := 5
+                return false
+            }
+            focused := EacFieldGuard.StillFocused(this.Target.Field, context)
+            if binding.Vk = 9
+                this.LastTabDecision := focused ? 7 : 6
+            return focused
         }
         snapshot := this.Snapshot()
         allowed := snapshot && snapshot.Context.Key = this.Target.Context.Key
@@ -717,6 +735,12 @@ class EacApplication {
             return EacUiaFieldProvider.BoundsFlags
         if query = 7
             return EacUiaFieldProvider.LastControlType
+        if query = 8
+            return EacUiaFieldProvider.FocusStage | (EacUia.MsaaStage << 8)
+        if query = 9
+            return EacUia.MsaaState
+        if query = 10
+            return this.HasOwnProp("LastTabDecision") ? this.LastTabDecision : 0
         reasons := ["OK", "Disabled", "NoContext", "UnknownField", "UIAUnsafeField",
             "UIAWindowMismatch", "UIAReadOnlyOrRange", "UIARange", "UIATextUnit",
             "UIACaretUnavailable", "TextChanged", "FocusChanged", "UIAUnavailable",

@@ -24,11 +24,17 @@ ENGの追加は不要。本体はキーボードレイアウトを追加・切�
 
 候補キーの判定と確定直前にも本文・フォーカス・IMEを再照合し、表示後のモード変更や変換開始時には古い候補を確定しない。開いたIMEの未確定入力照会はライブラリ試験として残しているが、常駐本体はIME ONの候補を許可しない。
 
-通常欄で安全判定できるクラスは `Edit`、`RichEdit`、`RichEdit20A/W`、`RichEdit50A/W`、`RichEditD2DPT`。ES_PASSWORD/EM_GETPASSWORDCHAR、読み取り専用、選択範囲、32767文字を超える欄、タイムアウトは拒否する。それ以外のクラスはアプリ名を制限せずUIAで判定する。カスタム入力欄への強制有効化設定はない。Scintilla、Excel本文・数式バー、VS Code本文、Google Docs/Sheets/Slides等は個別の動作を保証していない。必要な安全情報を公開しない欄では停止する。
+通常欄で安全判定できるクラスは `Edit`、`RichEdit`、`RichEdit20A/W`、`RichEdit50A/W`、`RichEditD2DPT`。ES_PASSWORD/EM_GETPASSWORDCHAR、読み取り専用、選択範囲、32767文字を超える欄、タイムアウトは拒否する。それ以外のクラスはアプリ名を制限せずUIAで判定する。カスタム入力欄への強制有効化設定はない。Word本文・Googleスプレッドシートのセル編集中にも対応を拡張した。Scintilla、Excel本文・数式バー、VS Code本文、Google Slides等は個別の動作を保証していない。必要な安全情報を公開しない欄では停止する。
 
-Chrome/Brave/Edge、Codex等に加え、他のアプリやUIフレームワークでも同じUIAプロバイダーを使用する。**フォーカス中のEdit・編集可能なComboBoxで、パスワードでないこと、編集可能、単一の空選択、入力欄内の本文近傍、前面ウィンドウの祖先との一致を確認できた欄だけ**が対象。textareaやcontenteditableも同じ情報を公開すれば扱う。通常の読み取りは直前128文字・直後1文字。下記のEOF確認を除きValue全文は読まず、SetValue・クリップボード操作は行わない。同じウィンドウ内の別欄への移動もruntime identityで区別し、確定前に再照会する。Document、リスト専用ComboBox、情報が不足する独自Webエディターは停止する。
+Chrome/Brave/Edge、Codex等に加え、他のアプリやUIフレームワークでも同じUIAプロバイダーを使用する。**フォーカス中のEdit・編集可能なComboBox・編集可能なDocumentで、パスワードでないこと、編集可能、単一の空選択、入力欄内の本文近傍、前面ウィンドウの祖先との一致を確認できた欄だけ**が対象。textareaやcontenteditableも同じ情報を公開すれば扱う。通常の読み取りは直前128文字・直後1文字。下記のEOF確認を除きValue全文は読まず、SetValue・クリップボード操作は行わない。同じウィンドウ内の別欄への移動もruntime identityで区別し、確定前に再照会する。読み取り専用のDocument、リスト専用ComboBox、情報が不足する独自Webエディターは停止する。
 
 Google検索欄はBrave実機でUIAのComboBox（50003）、編集可能・空選択として公開されることを確認した。以前はEdit（50004）だけを許可していたため停止していた。ComboBoxではValueIsReadOnly=falseを必須とし、選択・左右近傍の範囲がその入力欄内に含まれることも確認する。[MicrosoftのComboBox仕様](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-supportcomboboxcontroltype)のとおり、選択だけのComboBoxは入力欄として扱わない。
+
+Word等のDocument（50030）はTextPatternの文書範囲・空選択・左右近傍の包含とreadonly=falseを確認する。文書全体やValue全文は取得せず、大きな文書でも局所範囲だけ読む。端点が不整合なDocumentをEdit向けのValue全文照合で再許可することはない。[MicrosoftのDocument仕様](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-supportdocumentcontroltype)も参照。Wordデスクトップの実画面で`confi`の5候補表示、Tab選択、Enterで`confidence`への確定と改行なしを確認済み。
+
+表示位置はUIAの空選択矩形を優先し、取得できなければ同じ論理位置のアクティブなTextPattern2キャレットを使う。それも取得できない可視Edit/ComboBoxでは、前面クライアント内に収まる入力欄の矩形下端へ表示する。この最後の経路は厳密なキャレット位置ではなく入力欄基準。BraveのGoogleスプレッドシートではこの経路で、利用者の手入力による候補表示・Tab→Enter確定・セル編集の維持を確認済み。セルを選択しただけの状態は対象外。
+
+Googleドキュメント等のアクセシビリティ用Editが画面外にある場合は、さらにValueIsReadOnly=falseと、**同じnativeフォーカスHWNDが所有する、可視かつ保護されていないMSAAのシステムキャレット**を必須とする。ROLE_SYSTEM_CARET・state・所有HWND・前面クライアント内の矩形を本文取得前後に照合する。MSAAの本文・名前・値は取得せず、UIA側の実テキスト・空選択・readonly・identity照合も維持する。Braveでスクリーンリーダー/点字サポートをONにした環境で、利用者の実キーによる候補表示・Tab青選択→Enter確定（余計な改行なし）と、本体の確定回数増加を照合済み。設定は［ツール→ユーザー補助設定］にある。別のスクリーンリーダーのインストールは不要。片方だけの設定で動作するかは未検証で、設定を自動変更しない。設定手順と動作の変化は[Google公式ヘルプ](https://support.google.com/docs/answer/6282736?hl=ja)を参照。
 
 Chrome/Brave/EdgeとCodexのプロファイルを既定有効・自動学習ONにしている。Codexデスクトップの`ChatGPT.exe`と`Codex.exe`の両プロセス名を用意する。IME ONはネイティブIMEへ任せる。2026-11-09、Codex実画面で9候補表示・候補選択・Enterでのconfi→confident確定（送信なし）を確認した。その後Spaceの候補操作は廃止し、現在はTab/↑↓で選択する。Chrome156では専用フォームのUIA公開属性を確認済み。後続の利用者による手入力で、Chrome専用localhostフォームの候補表示・Tab後数字・Enter確定・未選択Enterの通常改行を確認した。初期5行→9行の実表示、任意のWebアプリ、合成OSキー自動試験は未確認。対応範囲と残る7項目の進捗は[TODO](docs/TODO.md)に記録する。
 
@@ -92,7 +98,7 @@ Windows 11の新しいメモ帳の内部コントロールが対応クラスか�
 | app:実行ファイル名 / Enabled, Learning, Keys | アプリ別の補完・学習・候補キーON/OFF |
 | app:実行ファイル名 / Tab, Enter | アプリ別のTab/Enter確定ON/OFF |
 
-プロファイル許可は、そのアプリの独自コントロールすべてに対応したことを意味しない。上記の安全判定を通る通常欄、対応版のサクラ本文、UIAのEdit/編集可能ComboBoxが対象。未登録アプリやExcel/VS Codeもアプリ単位では候補表示を許可するが、本文等の個別欄が安全判定を通るかは別に確認する。候補表示の`Enabled`と学習の`Learning`は独立し、`Enabled=0`でも`Learning=1`なら安全な対応欄で学習する。`Excluded`とアプリ別の明示OFFを優先する。未対応の独自欄は学習しない。新しいアプリを試す際は必要に応じて`Learning=0`にし、`docs/MANUAL_TESTS.md`を確認する。既存の設定ファイルは自動移行しないため、旧版から候補表示を広げる場合は`DefaultEnabled=1`と対象アプリの`Enabled=1, Keys=1`を指定する（今回の手元設定は反映済み）。
+プロファイル許可は、そのアプリの独自コントロールすべてに対応したことを意味しない。上記の安全判定を通る通常欄、対応版のサクラ本文、UIAのEdit/編集可能ComboBox/編集可能Documentと検証済みアクセシビリティ用Editが対象。未登録アプリやExcel/VS Codeもアプリ単位では候補表示を許可するが、本文等の個別欄が安全判定を通るかは別に確認する。候補表示の`Enabled`と学習の`Learning`は独立し、`Enabled=0`でも`Learning=1`なら安全な対応欄で学習する。`Excluded`とアプリ別の明示OFFを優先する。未対応の独自欄は学習しない。新しいアプリを試す際は必要に応じて`Learning=0`にし、`docs/MANUAL_TESTS.md`を確認する。既存の設定ファイルは自動移行しないため、旧版から候補表示を広げる場合は`DefaultEnabled=1`と対象アプリの`Enabled=1, Keys=1`を指定する（今回の手元設定は反映済み）。
 
 ## 個人辞書とデータ管理
 
@@ -132,7 +138,7 @@ $ahk = "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe"
 |---|---|---|
 | A: 1プロセスへ統合 | 高コスト探索とキャッシュを完全共有できる | 既存ホットキー・常駐ライフサイクルへの影響が大きい。今回不採用 |
 | B: IME表示がIPCで配信 | プロセス分離とキャッシュ共有を両立 | 既存側への変更と世代/フォーカス/鮮度管理が必要。将来候補 |
-| C: 既存無変更・候補時に取得 | 既存環境への影響が最小 | **採用**。native欄の座標はWin32。非native欄はUIAの安全情報が取れた場合だけ扱う |
+| C: 既存無変更・候補時に取得 | 既存環境への影響が最小 | **採用**。native欄の座標はWin32。非native欄はUIA、画面外のアクセシビリティ用Editには限定したMSAA照合を追加 |
 
 CaretProvider.GetPosition(context)はFound/X/Y/Top/Bottom/Method/Hwnd/Focus/Tick/Ageを返す（Yは下端）。GUIThreadInfoのキャレット上下端を、そのHWND自身のDPI認識方式で画面座標へ変換し、物理ピクセルへ正規化する。UIA入力欄では既存のUIAキャレット矩形から同じ上下端を保持する。入力先移動時に古い位置を使わないよう毎回確認する。候補がない待機中には位置を取得しない。Win32経路の位置取得にUIA/IA2は使用せず、マウス位置へ推測表示しない。
 

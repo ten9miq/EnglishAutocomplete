@@ -1,5 +1,22 @@
 # 検証記録 — 2026-11-08
 
+## 2026-11-09: Word / Googleスプレッドシート / Googleドキュメント
+
+3アプリの「候補が出ない」を、利用者の使い捨てテスト文書・セルと本文を記録しない数値診断で調査し、入力欄の能力に基づく共通経路を拡張した。以下は先行節のEdit/ComboBox限定より後の実装。
+
+| 対象 | 実測した停止原因 | 対応と実入力の確認 |
+|---|---|---|
+| Wordデスクトップ | focused Document=50030を旧版がStage2で拒否。TextPattern、空選択、readonly=false、範囲内、caret矩形は取得可能 | Documentの文書/局所rangeの包含と編集可能性を検証。computer-useで本文を観測して個別の実キーを送り、confi→5候補→Tabで1番青選択→Enterでconfidence（改行なし）を実画面確認。独立した局所readで期待語との一致=true、末尾語長10、After長0も確認 |
+| Googleスプレッドシート / Brave | セル編集中のComboBox=50003で文字・空選択・readonly=falseは取得可、空rangeの矩形は無し。Stage10/UIACaretUnavailable | 同一endpointのactive TextPattern2 caret、それも無い場合は可視入力欄の矩形下端へ表示。利用者から「候補が出て、セル編集中のまま確定できた」と回答。本体Reason=OK、Selected=1、CommitCount増加と照合 |
+| Googleドキュメント / Brave | 通常時のGroup=50026等は情報不足。スクリーンリーダー/点字ONの確認時は画面外Edit=50004が本文/空選択を公開するが、UIA位置はY約-10000。MSAAは実文書内のsystem caretを公開 | UIAの本文/選択/readonlyと、同じfocus HWND所有・role7・安全なstate・client内のMSAA矩形を二重検証。利用者の最新試験で候補表示→Tab青選択→Enterで改行せず確定を確認。本体TabDecision=7、Selected=1、CommitCount=0→1（続く操作で2）を照合 |
+
+- Docsの前段では、設定ON後の入力・待機が確実に行われたか曖昧な回答もあった。スクリーンリーダーだけでは動かない等の単独の因果は確定していない。今回の成功環境はスクリーンリーダーと点字サポートの両方ON。設定をスクリプトから変更せず、片方だけONや別ブラウザーの結果は未検証とする。[Googleの設定説明](https://support.google.com/docs/answer/6282736?hl=ja)に従い利用者が操作した。
+- Docsの中間版では候補表示後のTabが本文へ入った。選択/idle keepaliveのMSAA再取得を除き、UIAの同一identity/focus・編集可能性・IMEの照合に戻した。MSAAの物理caret証明は表示Snapshotと実際のCommitで維持する。診断自身の負荷を減らすため、最終試験はUIA属性プローバーを停止し、本体のcached numericだけ100ms間隔で取得した。この2変更後に成功しており、どちらか一方だけを独立した根因として断定しない。Stage10/Reason=Fieldは読み取り途中の中間状態でもあり、その値だけでは失敗を意味しない。
+- TextPattern2のactive/collapsed/同一endpoint、Documentの保護・選択・包含・大文書、field矩形の画面外/不正値、proxyのwritable Value/readonly/password/selection、MSAAのowner/role/state/矩形、失敗時のCOM解放とVARIANT/SAFEARRAY ABIを模擬API・COMスタブで検証。native password/readonly拒否をUIAで迂回しない条件、従来のUIA Edit/ComboBoxも維持する。MSAAは名前・値・本文を取得しない。
+- AHK v2.0.28 x64、`tools/verify.ps1 -Ahk "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe"`：絶対Include一時ラッパーによる構文4入口、core115 / IME56 / navigation107 / forget29 / UIA646 / サクラ27 = 980 checksを全てexit 0。一時ラッパーはfinallyで削除。`git diff --check`もPASS。個別アプリの全機能・実IMEの全モードを試したことは意味しない。
+- 稼働中だった本体だけへ変更を反映。最終PID14896、対象CommandLine・単一プロセス・WM_NULL診断応答・InputHook=1・3秒後生存を確認し、開始時から他のAHK10本を維持。作業専用のUIA/MSAA属性プローバーとcached numeric monitorは終了し、本体・ブラウザー・Word・IMEは維持した。個人DBを手動変更せず、commit/pushは行っていない。
+- Git対象外の証拠：`tests/results/office-verify.txt`、`office-field-metadata.tsv`、`docs-msaa-proof.txt`、`word-proof.txt`、`office-numeric.tsv`、`office-restart-proxy-nav.json`、`office-final-state.json`。Wordはエージェント自身の実画面/実キー検証、Sheets/Docsは利用者の実キーと数値診断の照合であり、同じ検証方法とは扱わない。Excel/VS Code/Slides、Docsの片方だけの設定、複雑な保護文書・共同編集・他ブラウザーは今回未検証。
+
 ## 2026-11-09: Google検索欄・アプリ名に依らない補完
 
 Brave URL欄では候補が出るがGoogle検索欄では出ないという利用者の報告を調査した。利用者がIME OFFで人工入力`confi`を手入力する間、本体のcached numeric diagnosticと、フォーカス要素の数値UIA属性だけを監視した。エージェントからの前面化・フォーカス変更・キー注入は行わず、URL・タイトル・本文・Valueの診断記録は採取していない。
