@@ -8,6 +8,7 @@ import tempfile
 import time
 import unittest
 from contextlib import closing
+from copy import deepcopy
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -85,6 +86,51 @@ class DictionaryTests(unittest.TestCase):
         self.assertEqual(len(rows), 113438)
         digest = hashlib.sha256(json.dumps(rows, ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest()
         self.assertEqual(digest, "f392a564dc101b4e029aa7b7e27c25e8525ed05a85f4213aa737b13806ac5bf1")
+
+    def test_original_it_descriptions_and_provenance(self):
+        path = ROOT / "data/it-descriptions.json"
+        document = json.loads(path.read_text("utf-8"))
+        available = {row[0] for row in self.db.execute("SELECT w.norm FROM words w JOIN it_entries it ON it.word_id=w.id WHERE it.source=4")}
+        records = builder.description_records(document, available)
+        self.assertGreaterEqual(len(records), 50)
+        self.assertEqual(self.db.execute("SELECT count(*) FROM it_description_provenance").fetchone()[0], len(records))
+        for norm, entry in records.items():
+            with self.subTest(word=norm):
+                row = self.db.execute("SELECT it.translation,p.reference_url,p.license,p.verified_on,p.origin,p.review_status "
+                    "FROM it_entries it JOIN words w ON w.id=it.word_id "
+                    "JOIN it_description_provenance p ON p.word_id=w.id WHERE it.source=4 AND w.norm=?", (norm,)).fetchone()
+                self.assertEqual(row, tuple(entry[k] for k in ("description", "reference_url", "license", "verified_on", "origin", "review_status")))
+        manifest = json.loads((ROOT / "data/dictionary.manifest.json").read_text("utf-8"))
+        self.assertEqual(manifest["it_descriptions_sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+        self.assertEqual(manifest["it_description_count"], str(len(records)))
+        self.assertEqual(manifest["it_description_license"], "MIT")
+
+    def test_description_validation_and_review_gate(self):
+        document = {"version": 1, "language": "ja", "entries": [{"word": "Kubernetes", "description": "コンテナの管理基盤",
+            "reference_url": "https://kubernetes.io/", "license": "MIT", "verified_on": "2026-11-10",
+            "origin": "original", "review_status": "reviewed"}]}
+        available = {"kubernetes"}
+        self.assertIn("kubernetes", builder.description_records(document, available))
+        draft = deepcopy(document)
+        draft["entries"][0]["review_status"] = "draft"
+        self.assertEqual(builder.description_records(draft, available), {})
+        for key, value in [("word", "UnknownFixture"), ("word", "Kubernetes "), ("word", 42),
+                           ("description", ""), ("description", "a" * 101), ("description", "bad\nline"),
+                           ("reference_url", "http://example.com"), ("reference_url", "https://"),
+                           ("reference_url", "https://user:password@example.com"), ("reference_url", "https://example.com/a b"),
+                           ("license", "CC-BY-4.0"), ("origin", "translation"),
+                           ("verified_on", "2026-02-30"), ("verified_on", "20261110"), ("review_status", "unverified")]:
+            invalid = deepcopy(document)
+            invalid["entries"][0][key] = value
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                builder.description_records(invalid, available)
+        duplicate = deepcopy(document)
+        duplicate["entries"].append(dict(duplicate["entries"][0], word="KUBERNETES"))
+        with self.assertRaises(ValueError):
+            builder.description_records(duplicate, available)
+        for invalid in ([], {"version": True, "language": "ja", "entries": []}, {"version": 1, "language": "ja", "entries": {}}):
+            with self.assertRaises(ValueError):
+                builder.description_records(invalid, available)
 
     def test_sources_translation_and_inflections(self):
         for word in ("computer", "computers", "confirmed", "configuration"):

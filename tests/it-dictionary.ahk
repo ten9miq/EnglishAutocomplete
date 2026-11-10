@@ -27,11 +27,17 @@ Engine := EacSuggestionEngine(DictionaryPath, Config, Personal)
 for pair in [["kuber", "kubernetes"], ["terrafor", "terraform"], ["kubec", "kubectl"], ["pn", "pnpm"], ["ripgr", "ripgrep"],
     ["oll", "ollama"], ["chatg", "chatgpt"], ["langch", "langchain"]]
     Assert(Find(Engine.Search(pair[1]), pair[2]), "default IT/AI completion " pair[2])
+Assert(Find(Engine.Search("kuber"), "kubernetes").Translation == "コンテナ化したアプリの配置や運用をまとめて制御する基盤", "curated Japanese IT description reaches candidate")
+baseDocker := Engine.Db.Query("SELECT translation FROM words WHERE norm='docker'")[1][1]
+Assert(Find(Engine.Search("docke"), "docker").Translation == "アプリと実行に必要なものをコンテナにまとめて動かす基盤", "IT description overrides ordinary English homonym")
+Assert(Find(Engine.Search("kustom"), "kustomize").Translation == "[IT]", "unannotated IT word keeps fallback label")
+Assert(Find(Engine.Search("oll"), "ollama").Translation == "AIモデルの実行環境", "existing AI supplement description remains visible")
 item := Find(Engine.Search("curso"), "cursor")
 Assert(item && item.Word == "Cursor", "AI spelling overrides shared ordinary word while enabled")
 Config.IT := false
 Assert(!Find(Engine.Search("kuber"), "kubernetes"), "IT off removes IT-only word")
 Assert(!Find(Engine.Search("oll"), "ollama"), "IT off also disables supplement")
+Assert(Find(Engine.Search("docke"), "docker").Translation == baseDocker, "IT off restores original English meaning")
 item := Find(Engine.Search("curso"), "cursor")
 Assert(item && item.Word == "cursor", "IT off restores base spelling")
 Config.IT := true, Config.AISupplement := false
@@ -69,6 +75,8 @@ if !A_Args.Length {
     Store := EacDictionaryStore({Root: Root, DataDirectory: Fixture, PromotionCount: 2})
     Assert(Store.List(3, "kubernetes").Total = 1, "management screen can filter IT-only distribution entries")
     Assert(Store.List(3, "ollama").Rows[1][1] == "Ollama", "management screen preserves supplemental spelling")
+    Assert(Store.List(3, "コンテナ化したアプリ").Total = 1, "management search includes Japanese IT description")
+    Assert(Store.List(3, "docker").Rows[1][3] == "アプリと実行に必要なものをコンテナにまとめて動かす基盤", "management description agrees with candidate meaning")
     Assert(InStr(EacDictionaryManager.SourceNames(12), "CSpell") && InStr(EacDictionaryManager.SourceNames(12), "AI補助"), "management provenance labels include new sources")
     Store.Close(), Store := false
 }

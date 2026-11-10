@@ -35,6 +35,7 @@ def package():
         assert "EnglishAutocomplete/licenses/EJDict-CC0.txt" in archive.namelist()
         assert "EnglishAutocomplete/licenses/CSpell-software-terms-MIT.txt" in archive.namelist()
         assert "EnglishAutocomplete/data/ai-supplement.json" in archive.namelist()
+        assert "EnglishAutocomplete/data/it-descriptions.json" in archive.namelist()
         count = len(archive.namelist())
     return {"archive": str(destination), "files": count, "bytes": destination.stat().st_size,
             "sha256": hashlib.sha256(destination.read_bytes()).hexdigest()}

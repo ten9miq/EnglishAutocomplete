@@ -64,14 +64,15 @@ class EacDictionaryStore {
             columns := "word,manual,uses,last_used,blocked"
         } else {
             db := this.Distribution, table := "words"
-            condition := "(instr(norm,?)>0 OR instr(translation,?)>0)"
-            parameters := [search, search]
+            condition := "(instr(norm,?)>0 OR instr(translation,?)>0 OR EXISTS(SELECT 1 FROM it_entries it "
+                . "WHERE it.word_id=words.id AND instr(it.translation,?)>0))"
+            parameters := [search, search, search]
             if source = 3
                 condition .= " AND (source & 12)!=0"
             columns := "COALESCE((SELECT word FROM it_entries WHERE word_id=words.id AND source=8),"
                 . "(SELECT word FROM it_entries WHERE word_id=words.id AND source=4),word),source,"
-                . "COALESCE(NULLIF(translation,''),(SELECT translation FROM it_entries WHERE word_id=words.id AND source=8),"
-                . "(SELECT translation FROM it_entries WHERE word_id=words.id AND source=4),'')"
+                . "COALESCE(NULLIF((SELECT translation FROM it_entries WHERE word_id=words.id AND source=8),''),"
+                . "NULLIF((SELECT translation FROM it_entries WHERE word_id=words.id AND source=4),''),translation,'')"
         }
         total := Integer(db.Query("SELECT count(*) FROM " table " WHERE " condition, parameters)[1][1])
         pages := Max(1, Ceil(total / EacDictionaryStore.PageSize))

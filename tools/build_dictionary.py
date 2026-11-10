@@ -5,12 +5,14 @@ is executed. Prefix top lists bound runtime work independently of vocabulary siz
 """
 import argparse
 from contextlib import closing
+from datetime import date
 import hashlib
 import json
 import re
 import sqlite3
 import tempfile
 import urllib.request
+from urllib.parse import urlsplit
 import zipfile
 from pathlib import Path
 
@@ -56,6 +58,46 @@ def cspell_words(content):
         word = line.partition("#")[0].strip()
         if len(word) >= 2 and normalize(word):
             yield word
+
+
+def description_records(document, available):
+    """Validate the original-description source of truth before touching output."""
+    if (not isinstance(document, dict) or type(document.get("version")) is not int
+            or document.get("version") != 1 or document.get("language") != "ja"):
+        raise ValueError("Unsupported IT description format")
+    if not isinstance(document.get("entries"), list):
+        raise ValueError("IT descriptions must contain an entries array")
+    reviewed, seen = {}, set()
+    for entry in document["entries"]:
+        if not isinstance(entry, dict):
+            raise ValueError("Invalid IT description record")
+        word = entry.get("word", "")
+        norm = normalize(word) if isinstance(word, str) else None
+        if not norm or len(word) < 2 or word != word.strip() or norm not in available or norm in seen:
+            raise ValueError("Unknown or duplicate IT description word: " + str(word))
+        seen.add(norm)
+        text = entry.get("description", "")
+        if (not isinstance(text, str) or not 1 <= len(text) <= 100 or text != text.strip()
+                or any(ord(c) < 32 or ord(c) == 127 or c in "\u2028\u2029" for c in text)):
+            raise ValueError("IT descriptions must be short, nonempty single lines: " + word)
+        reference = entry.get("reference_url", "")
+        if not isinstance(reference, str) or any(c.isspace() for c in reference):
+            raise ValueError("Invalid IT description reference: " + word)
+        parsed = urlsplit(reference)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError("IT descriptions require an HTTPS reference: " + word)
+        if entry.get("license") != "MIT" or entry.get("origin") != "original":
+            raise ValueError("Only original MIT descriptions are supported: " + word)
+        verified = entry.get("verified_on", "")
+        if not isinstance(verified, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", verified):
+            raise ValueError("IT descriptions require an ISO verification date: " + word)
+        date.fromisoformat(verified)
+        status = entry.get("review_status")
+        if status not in ("draft", "reviewed"):
+            raise ValueError("Invalid IT description review status: " + word)
+        if status == "reviewed":
+            reviewed[norm] = entry
+    return reviewed
 
 
 def archives(fetch=False):
@@ -172,6 +214,12 @@ def compile_dictionary(paths, output, size=60):
     for name in CSPELL_FILES:
         for word in cspell_words(paths["cspell"][name].read_text("utf-8-sig")):
             add_it(word, 4)
+    description_path = ROOT / "data" / "it-descriptions.json"
+    descriptions = description_records(json.loads(description_path.read_text("utf-8")),
+                                       {norm for norm, source in it_entries if source == 4})
+    for norm, entry in descriptions.items():
+        display, score, _ = it_entries[norm, 4]
+        it_entries[norm, 4] = (display, score, entry["description"])
     supplement_path = ROOT / "data" / "ai-supplement.json"
     supplement = json.loads(supplement_path.read_text("utf-8"))
     if supplement["version"] != 1:
@@ -202,6 +250,9 @@ def compile_dictionary(paths, output, size=60):
             CREATE TABLE it_entries(word_id INTEGER NOT NULL REFERENCES words(id),
                   source INTEGER NOT NULL, word TEXT NOT NULL, score INTEGER NOT NULL,
                   translation TEXT NOT NULL, PRIMARY KEY(word_id,source)) WITHOUT ROWID;
+            CREATE TABLE it_description_provenance(word_id INTEGER PRIMARY KEY REFERENCES words(id),
+                  reference_url TEXT NOT NULL, license TEXT NOT NULL, verified_on TEXT NOT NULL,
+                  origin TEXT NOT NULL, review_status TEXT NOT NULL);
             CREATE TABLE phrases(norm TEXT PRIMARY KEY, phrase TEXT, translation TEXT,
                 source INTEGER) WITHOUT ROWID;
             CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT) WITHOUT ROWID;
@@ -218,6 +269,10 @@ def compile_dictionary(paths, output, size=60):
                 if (norm, kind) in it_entries:
                     display, it_score, note = it_entries[norm, kind]
                     con.execute("INSERT INTO it_entries VALUES (?,?,?,?,?)", (ident, kind, display, it_score, note))
+            if norm in descriptions:
+                entry = descriptions[norm]
+                con.execute("INSERT INTO it_description_provenance VALUES (?,?,?,?,?,?)", (
+                    ident, entry["reference_url"], entry["license"], entry["verified_on"], entry["origin"], entry["review_status"]))
         # Sorted by descending score, stable alphabetical tie: first TOP wins.
         prefixes = {}
         for kind in (1, 2, 4, 8):
@@ -244,7 +299,10 @@ def compile_dictionary(paths, output, size=60):
                     "cspell_word_count": str(sum(kind == 4 for norm, kind in it_entries)),
                     "ai_word_count": str(sum(kind == 8 for norm, kind in it_entries)),
                     "ai_supplement_sha256": hashlib.sha256(supplement_path.read_bytes()).hexdigest(),
-                    "ai_verified_on": supplement["verified_on"]}
+                    "ai_verified_on": supplement["verified_on"],
+                    "it_description_count": str(len(descriptions)),
+                    "it_descriptions_sha256": hashlib.sha256(description_path.read_bytes()).hexdigest(),
+                    "it_description_license": "MIT"}
         metadata["possessives"] = "untranslated base+'s excluded until apostrophe; contractions retained"
         con.executemany("INSERT INTO metadata VALUES (?,?)", sorted(metadata.items()))
         con.commit()
