@@ -86,6 +86,18 @@ class EacFieldGuard {
     }
     static StillFocused(field, context) => !field.HasOwnProp("Identity") || EacUiaFieldProvider.IsFocused(field, context)
 
+    static ObservedSuffix(field, observed) {
+        ; Modal editors may consume a printable command (Vim's i, for example)
+        ; without inserting it. Drop only extra leading observations when the
+        ; entire real word is their exact suffix. This never invents text or
+        ; accepts an arbitrary mismatch, stale shorter prefix, URL, or email.
+        if !field || !RegExMatch(field.Before, "[A-Za-z][A-Za-z'-]*$", &match)
+            return ""
+        actual := match[0]
+        return StrLen(actual) < StrLen(observed) && SubStr(observed, StrLen(observed)-StrLen(actual)+1) == actual
+            && this.Matches(field, actual) ? actual : ""
+    }
+
     static Matches(field, word, boundary := false) {
         if !field || word = ""
             return false

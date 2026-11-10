@@ -26,11 +26,23 @@ ENGの追加は不要。本体はキーボードレイアウトを追加・切�
 
 IME開閉の照会は1回20ms。Excelで単発の応答遅延を実測したため、WindowsのERROR_TIMEOUT（1460）の場合だけ、同じフォーカス・レイアウト・IME窓・所有スレッドを再確認して1回再照会する。過去のIME状態は使わず、再失敗・対象変更・IME ONは停止する。
 
-通常欄で安全判定できるクラスは `Edit`、`RichEdit`、`RichEdit20A/W`、`RichEdit50A/W`、`RichEditD2DPT`。ES_PASSWORD/EM_GETPASSWORDCHAR、読み取り専用、選択範囲、32767文字を超える欄、タイムアウトは拒否する。それ以外のクラスはアプリ名を制限せずUIAで判定する。カスタム入力欄への強制有効化設定はない。Word本文・Googleスプレッドシートのセル編集中、Excelのセル編集・数式バーで実入力を確認した。Scintilla、Google Slides等は個別の動作を保証していない。必要な安全情報を公開しない欄では停止する。
+通常欄で安全判定できるクラスは `Edit`、`RichEdit`、`RichEdit20A/W`、`RichEdit50A/W`、`RichEditD2DPT`。ES_PASSWORD/EM_GETPASSWORDCHAR、読み取り専用、選択範囲、32767文字を超える欄、タイムアウトは拒否する。それ以外のクラスはアプリ名を制限せずUIAで判定する。カスタム入力欄への強制有効化設定はない。Word本文・Googleスプレッドシートのセル編集中、Excelのセル編集・数式バー、下記設定のVS Code本文で実入力を確認した。Scintilla、Google Slides等は個別の動作を保証していない。必要な安全情報を公開しない欄では停止する。
 
 Chrome/Brave/Edge、Codex等に加え、他のアプリやUIフレームワークでも同じUIAプロバイダーを使用する。**フォーカス中のEdit・編集可能なComboBox・編集可能なDocumentで、パスワードでないこと、編集可能、単一の空選択、入力欄内の本文近傍、前面ウィンドウの祖先との一致を確認できた欄だけ**が対象。textareaやcontenteditableも同じ情報を公開すれば扱う。通常の読み取りは直前128文字・直後1文字。下記のEOF確認を除きValue全文は読まず、SetValue・クリップボード操作は行わない。同じウィンドウ内の別欄への移動もruntime identityで区別し、確定前に再照会する。読み取り専用のDocument、リスト専用ComboBox、情報が不足する独自Webエディターは停止する。
 
 **Excel** 16.0.19127.20860の空ブックで、空セルへの直接入力、F2編集、ダブルクリック編集、数式バーでの補完を確認した。いずれも `confi` で5候補が表示され、Tabで先頭を選び、Enterで `confidence` を挿入した。そのセルの編集は続き、改行やセル移動は起きなかった。セル編集では数式バーか対象セルの直下にあるフォーカス済みの編集欄を特定する。IME OFF・書込み可能・選択範囲なしを確認できた場合に補完する。Excel標準補完が語尾を選択中の欄は対象外。数式・保護シート・結合セルは実機未検証。
+
+**VS Code**は1.143.1の通常プロファイル・Vim拡張有効の環境で、プレーンテキストとMarkdownそれぞれのNORMAL→`i`直後の最初の`confi`から、5候補→Tab青選択→Enterで`confidence`確定・余計な改行なしを確認した。プレーンテキストでは標準IntelliSense候補との同時表示でも成功。次の設定を2言語だけに適用し、他言語と既存の言語別設定は保持した。`accessibilitySupport`は実本文をUIAへ公開するために必要。`suggest.selectionMode`は標準IntelliSenseの自動選択がUIAフォーカスを候補行へ移す競合を避けるために必要で、標準候補の表示自体は残る。
+
+```json
+"editor.accessibilitySupport": "on",
+"[plaintext]": { "editor.suggest.selectionMode": "never" },
+"[markdown]": { "editor.suggest.selectionMode": "never" }
+```
+
+既存の言語ブロックがある場合はその中へ1項目だけ追加する。Vimの`i`等、本文に入らないキーが追跡の先頭へ混ざった場合は、安全な実入力欄で確認した完全な単語が追跡文字列の末尾と厳密一致するときだけ余分な観測を除く。任意の不一致・単語途中・URL等を許可せず、確定時にも実本文・位置・IMEを再検証する。
+
+画面読み上げモードではminimapやfolding等の動作も変わる（[VS Code公式説明](https://code.visualstudio.com/docs/configure/accessibility/accessibility)）。`never`では標準の自動候補を未選択で表示し、Ctrl+Spaceでの明示起動や矢印による選択は維持される（[公式設定説明](https://code.visualstudio.com/updates/v1_75#_suggest-selection-mode)）。明示的に標準候補を選んだ場面は、その候補へキー操作を任せる。設定を補完本体から自動変更することはない。
 
 Google検索欄はBrave実機でUIAのComboBox（50003）、編集可能・空選択として公開されることを確認した。以前はEdit（50004）だけを許可していたため停止していた。ComboBoxではValueIsReadOnly=falseを必須とし、選択・左右近傍の範囲がその入力欄内に含まれることも確認する。[MicrosoftのComboBox仕様](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-supportcomboboxcontroltype)のとおり、選択だけのComboBoxは入力欄として扱わない。
 

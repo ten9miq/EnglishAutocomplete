@@ -122,6 +122,13 @@ Assert(!EacFieldGuard.Matches({Before: "other", After: ""}, "compu"), "auto corr
 Assert(!EacFieldGuard.Matches({Before: "Compu", After: ""}, "compu"), "case-only auto correction mismatch refuses")
 Assert(EacFieldGuard.Matches({Before: "computer `r`n", After: ""}, "computer", true), "boundary learning verification")
 Assert(!EacFieldGuard.Matches({Before: "computer", After: ""}, "computer", true), "no boundary no learning")
+Assert(EacFieldGuard.ObservedSuffix({Before:"confi",After:""},"iconfi") == "confi", "modal insert command is discarded only against real complete word")
+Assert(EacFieldGuard.ObservedSuffix({Before:"hello confi",After:" "},"ciwconfi") == "confi", "multiple consumed commands can precede verified word")
+Assert(EacFieldGuard.ObservedSuffix({Before:"c",After:""},"ic") == "c", "one verified character restores tracking before minimum length")
+for pair in [["confi","confi"],["conf","confi"],["confi","conf"],["Compu","icompu"],["other","compu"],["","i"],
+    ["user@confi","iconfi"],["https://confi","iconfi"],["user_confi","iconfi"],["3confi","iconfi"]]
+    Assert(EacFieldGuard.ObservedSuffix({Before:pair[1],After:""},pair[2]) == "", "unverified/stale/corrected/unsafe suffix refused " pair[1])
+Assert(EacFieldGuard.ObservedSuffix({Before:"confi",After:"d"},"iconfi") == "", "real text to the right still refuses mid-word completion")
 Assert(Settings.Policy("excel.exe").Enabled && Settings.Policy("excel.exe").Keys, "Excel safe fields can complete without app opt-in")
 Assert(Settings.Policy("code.exe").Enabled && Settings.Policy("code.exe").Keys, "VS Code safe fields can complete without app opt-in")
 Assert(Settings.Policy("unknown.exe").Enabled && Settings.Policy("unknown.exe").Learning, "unknown app can complete and learn in verified safe fields")

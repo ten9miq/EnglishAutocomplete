@@ -14,6 +14,7 @@ class EacApplication {
     Navigating := false
     Expanded := false
     CommitCount := 0
+    ReconcileCount := 0
     ExcelStart := false
     TextRetryAt := 0
     Accepting := false
@@ -362,10 +363,17 @@ class EacApplication {
             prefix := this.Tracker.Word
             if prefix != "" && !EacFieldGuard.Matches(snapshot.Field, prefix) {
                 this.Hide()
-                ; Native text can precede its asynchronous InputHook callback.
-                ; Keep only the bounded, untrusted current token until its next
-                ; event/boundary; never display or commit an unmatched token.
-                return
+                actual := EacFieldGuard.ObservedSuffix(snapshot.Field, prefix)
+                if actual = "" {
+                    ; Native text can precede its asynchronous InputHook callback.
+                    ; Never display or commit an unmatched token.
+                    return
+                }
+                this.Tracker.Word := prefix := actual
+                this.Tracker.Learned := false
+                this.ReconcileCount += 1
+                this.Tracker.Generation += 1
+                generation := this.Tracker.Generation
             }
             if StrLen(prefix) < this.Config.MinLength || !EacSuggestionEngine.ValidPrefix(prefix) {
                 this.Hide()
@@ -774,6 +782,12 @@ class EacApplication {
             return this.HasOwnProp("LastTabDecision") ? this.LastTabDecision : 0
         if query = 11
             return this.Ime.LastFailure
+        if query = 12
+            return StrLen(this.Tracker.Word) | (this.Tracker.Blocked ? 256 : 0)
+        if query = 13
+            return this.Tracker.Generation | (this.ShownGeneration << 32)
+        if query = 14
+            return this.ReconcileCount
         reasons := ["OK", "Disabled", "NoContext", "UnknownField", "UIAUnsafeField",
             "UIAWindowMismatch", "UIAReadOnlyOrRange", "UIARange", "UIATextUnit",
             "UIACaretUnavailable", "TextChanged", "FocusChanged", "UIAUnavailable",

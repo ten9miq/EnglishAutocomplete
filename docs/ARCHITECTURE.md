@@ -33,6 +33,8 @@ Excel 16.0.19127.20860でGetFocusedElementが返すEXCEL6のPaneは、セル編�
 
 同じ実機ではIME OFFでもIMC_GETOPENSTATUSが単発でERROR_TIMEOUT（1460）になり、50msの独立診断でも失敗した。期限を広げず、20ms照会のtimeout時だけ同じnative context・HKL・default IME HWND・所有threadを確認し、メッセージ処理を一度譲って新しい20ms照会を最大1回行う。照会前後に同じ対象を再検証し、IME ON、再失敗、対象変更は許可しない。直前の成功状態やキャッシュを根拠にした確定は行わない。
 
+VS Code 1.143.1ではaccessibilitySupport=onで本文を公開する。標準IntelliSenseの自動選択はfocused要素を非編集Groupへ移すため、Groupを許可する代わりにsuggest.selectionMode=neverを併用する。標準候補の表示と明示操作を維持し、本文のEditとしての安全条件を満たす間だけ補完する。設定は本体から自動変更しない。
+
 既存IMEインジケーターと新規英文補完を統合せず、補完側は候補表示時だけGUIThreadInfoで位置を取得する(C案)。既存側はCaretGetPos/MSAA/UIA等を組み合わせるが、新規側がUIAv2を追加で読み込まなければUIA/IA2の重複探索は発生しない。共通ライブラリをIncludeするだけではプロセス間のキャッシュは共有されない。将来拡張するなら既存表示からフォーカス識別子・世代・鮮度を含むIPC配信(B案)を検討する。
 
 本MVPは通常Edit/RichEditのみ許可する。パスワード判定、選択状態、実テキスト、HWND+focus、IME状態を確認できない欄では停止する。既存表示の「A」は、TSFの未確定入力が存在しないことまでは保証しない。Google/MSが開いた半角英数を許可するには別の変換中判定を実証する必要がある。現版はENGと閉じた日本語IMEだけ許可し、目標仕様の一部が未達であることをREADMEで明示している。
