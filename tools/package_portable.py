@@ -10,8 +10,8 @@ TOP = ("EnglishAutocomplete.ahk", "ManageDictionary.ahk", "settings.default.ini"
 EXCLUDE = {"sources", "results", "__pycache__", "dist", "user"}
 
 
-def package():
-    destination = ROOT / "dist/EnglishAutocomplete-portable.zip"
+def package(destination=None):
+    destination = Path(destination) if destination is not None else ROOT / "dist/EnglishAutocomplete-portable.zip"
     destination.parent.mkdir(parents=True, exist_ok=True)
     paths = [ROOT / name for name in TOP]
     for directory in ("Lib", "data", "licenses", "tools", "tests", "docs"):
@@ -19,7 +19,7 @@ def package():
             if path.is_file() and not EXCLUDE.intersection(path.relative_to(ROOT).parts):
                 if path.name.startswith("resident-metrics") and path.suffix == ".json":
                     continue
-                if path.suffix.lower() in {".ahk", ".db", ".json", ".md", ".txt", ".py", ".ps1", ".html"}:
+                if path.suffix.lower() in {".ahk", ".db", ".json", ".jsonl", ".md", ".txt", ".py", ".ps1", ".html"}:
                     paths.append(path)
     with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted(set(paths)):
@@ -35,7 +35,8 @@ def package():
         assert "EnglishAutocomplete/licenses/EJDict-CC0.txt" in archive.namelist()
         assert "EnglishAutocomplete/licenses/CSpell-software-terms-MIT.txt" in archive.namelist()
         assert "EnglishAutocomplete/data/ai-supplement.json" in archive.namelist()
-        assert "EnglishAutocomplete/data/it-descriptions.json" in archive.namelist()
+        assert "EnglishAutocomplete/data/it-descriptions.jsonl" in archive.namelist()
+        assert "EnglishAutocomplete/data/it-descriptions.json" not in archive.namelist()
         count = len(archive.namelist())
     return {"archive": str(destination), "files": count, "bytes": destination.stat().st_size,
             "sha256": hashlib.sha256(destination.read_bytes()).hexdigest()}

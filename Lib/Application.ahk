@@ -25,6 +25,9 @@ class EacApplication {
     EnterArmedSerial := 0
     ReleaseBindings := []
     MouseBindings := []
+    NavigationPending := false
+    QueuedNavigation := []
+    QueuedAccept := false
     DeleteLatched := false
     DeleteActionArmed := false
     DeleteReleaseSerial := 0
@@ -110,6 +113,7 @@ class EacApplication {
     }
 
     Reset(*) {
+        this.NavigationPending := false, this.QueuedNavigation := [], this.QueuedAccept := false
         this.InputModifierMask := 0
         this.ExcelStart := false
         this.ClearSelection()
@@ -122,6 +126,7 @@ class EacApplication {
     }
 
     Hide() {
+        this.NavigationPending := false, this.QueuedNavigation := [], this.QueuedAccept := false
         this.ClearSelection()
         this.Visible := false
         this.Gui.Hide()
@@ -134,17 +139,21 @@ class EacApplication {
             return
         ; Some InputHook notifications can precede the hotkey action for the
         ; same key. Candidate-control characters must not finish the prefix.
-        if this.Visible && this.Target {
+        if (this.Visible || this.NavigationPending) && this.Target {
             policy := this.Target.Policy
             if (text = "`t" && (policy.ImeStyleKeys || policy.Tab))
                 || ((text = "`r" || text = "`n" || text = "`r`n")
-                    && this.Navigating && this.Selected > 0 && (policy.Enter || policy.ImeStyleKeys))
+                    && ((this.Navigating && this.Selected > 0) || (this.NavigationPending && this.QueuedNavigation.Length))
+                    && (policy.Enter || policy.ImeStyleKeys))
                 return
             if this.Navigating && policy.Keys && policy.ImeStyleKeys
                 && RegExMatch(text, "^[1-9]$") && Integer(text) <= this.CandidateCount()
                 return ; the suppressed number key may notify before its action
         }
+        continuing := (this.Visible || this.NavigationPending) && this.Target
+            && RegExMatch(text, "^[A-Za-z0-9_'.-]+$")
         this.ClearSelection()
+        this.QueuedNavigation := [], this.QueuedAccept := false
         this.TextRetryAt := 0
         ; Injected hotkey handling may release modifiers at SendLevel 0, whose
         ; key-up notifications are deliberately ignored by this InputHook.
@@ -156,7 +165,12 @@ class EacApplication {
             return
         }
         this.BindExcelEditor(context)
-        this.Visible := false ; invalidate hotkeys immediately, render on timer
+        ; Do not leave a visibly selected, stale popup on screen while key
+        ; interception is invalidated. A recent safe target may defer Tab to
+        ; the fresh preview; no old item is ever committed during this wait.
+        this.Visible := false
+        this.NavigationPending := continuing && context.Key = this.Target.Context.Key
+        this.Gui.Hide()
         for word in this.Tracker.Feed(text, context.Key) {
             if this.Pending.Length < 8
                 this.Pending.Push({Word: word, ContextKey: context.Key, Tick: A_TickCount, Boundary: true})
@@ -193,7 +207,7 @@ class EacApplication {
             this.InputModifierMask |= bit
             return
         }
-        if this.Visible {
+        if this.Visible || this.NavigationPending {
             for binding in this.KeyBindings
                 if binding.Vk = vk && (this.Modifiers() | this.InputModifierMask) = binding.Modifiers
                     && this.BindingPermitted(binding)
@@ -329,7 +343,7 @@ class EacApplication {
     }
 
     Refresh() {
-        if this.Sending
+        if this.Sending || this.Accepting
             return
         try {
             generation := this.Tracker.Generation
@@ -415,12 +429,41 @@ class EacApplication {
                 this.Hide()
                 return
             }
-            this.Target := snapshot
-            this.ShownGeneration := this.Tracker.Generation
+            ; GUI calls can pump input. Publish the freshly validated logical
+            ; selection atomically BEFORE rendering, so an Enter arriving in
+            ; Show cannot fall into the native editor during a false-visible gap.
+            previousCritical := A_IsCritical
+            Critical "On"
+            try {
+                if generation != this.Tracker.Generation
+                    return
+                queued := this.QueuedNavigation
+                accept := this.QueuedAccept
+                this.Target := snapshot
+                this.ShownGeneration := generation
+                for action in queued
+                    this.AdvanceSelection(action)
+                this.Visible := true
+                this.NavigationPending := false, this.QueuedNavigation := [], this.QueuedAccept := false
+                if accept && this.Navigating && this.Selected > 0 {
+                    this.AcceptScopeKey := snapshot.Context.Key
+                    this.Accepting := true
+                }
+            } finally Critical previousCritical
+            if accept && this.Accepting {
+                ; No need to render a candidate which is already confirmed.
+                try this.Commit()
+                finally this.Accepting := false
+                return
+            }
             this.Gui.Show(this.Items, this.Selected, anchor, this.CandidateCount())
-            this.Visible := generation = this.Tracker.Generation
-            if !this.Visible
-                this.Gui.Hide()
+            if !this.Visible || generation != this.Tracker.Generation || this.Target != snapshot {
+                ; A nested input/confirm/cancel or a newer publication owns the
+                ; state now. Never resurrect an obsolete popup or hide a new one.
+                if !this.Visible
+                    this.Gui.Hide()
+                return
+            }
         } catch {
             this.Fault := "Autocomplete suspended after runtime error; reload from tray"
             this.Reset()
@@ -447,6 +490,12 @@ class EacApplication {
                 return false ; a new press with native IME ON belongs to that IME
             return this.ArmEnter()
         }
+        if this.CanDeferTab(binding) {
+            this.LastTabDecision := 8
+            return true
+        }
+        if plainEnter && this.CanDeferEnter(binding)
+            return this.ArmEnter()
         if !this.Visible || this.Sending || this.ShownGeneration != this.Tracker.Generation || !this.Target {
             if binding.Vk = 9
                 this.LastTabDecision := 2
@@ -473,22 +522,7 @@ class EacApplication {
             && (binding.Action = "next" || binding.Action = "previous") {
             ; Navigation changes only our popup. Fresh focus/safety metadata is
             ; sufficient; defer expensive text/endpoint checks to Commit.
-            context := this.CurrentContext()
-            if !context || context.Key != this.Target.Context.Key {
-                if binding.Vk = 9
-                    this.LastTabDecision := 4
-                return false
-            }
-            ime := this.Ime.GetState(context)
-            if !ime.Allowed || ime.Key != this.Target.Ime.Key {
-                if binding.Vk = 9
-                    this.LastTabDecision := 5
-                return false
-            }
-            focused := EacFieldGuard.StillFocused(this.Target.Field, context)
-            if binding.Vk = 9
-                this.LastTabDecision := focused ? 7 : 6
-            return focused
+            return this.NavigationTargetValid(binding)
         }
         snapshot := this.Snapshot()
         allowed := snapshot && snapshot.Context.Key = this.Target.Context.Key
@@ -515,14 +549,85 @@ class EacApplication {
         if binding.Vk = 9 && (binding.Modifiers & ~4) = 0 && !policy.ImeStyleKeys && !policy.Tab
             return false
         if binding.Vk = 13 && binding.Modifiers = 0
-            && (!this.Navigating || this.Selected < 1 || (!policy.Enter && !policy.ImeStyleKeys))
+            && ((!this.Navigating || this.Selected < 1) && !(this.NavigationPending && this.QueuedNavigation.Length)
+                || (!policy.Enter && !policy.ImeStyleKeys))
             return false
         return true
     }
 
     CurrentContext() => EacFieldGuard.Context()
 
+    FocusedTarget(field, context) => EacFieldGuard.StillFocused(field, context)
+
+    NavigationTargetValid(binding) {
+        generation := this.Tracker.Generation
+        target := this.Target
+        if !target
+            return false
+        context := this.CurrentContext()
+        if !context || context.Key != target.Context.Key {
+            if binding.Vk = 9
+                this.LastTabDecision := 4
+            return false
+        }
+        ime := this.Ime.GetState(context)
+        if !ime.Allowed || ime.Key != target.Ime.Key {
+            if binding.Vk = 9
+                this.LastTabDecision := 5
+            return false
+        }
+        focused := this.FocusedTarget(target.Field, context)
+        if binding.Vk = 9
+            this.LastTabDecision := focused ? 7 : 6
+        return focused && target = this.Target && generation = this.Tracker.Generation
+    }
+
+    CanDeferTab(binding) {
+        return this.NavigationPending && !this.Sending && !this.Accepting
+            && binding.Vk = 9 && (binding.Modifiers & ~4) = 0
+            && (binding.Action = "next" || binding.Action = "previous")
+            && A_TickCount - this.LastInputAt <= 350 && this.Items.Length
+            && !this.Tracker.Blocked && EacSuggestionEngine.ValidPrefix(this.Tracker.Word)
+            && this.BindingPermitted(binding) && this.NavigationTargetValid(binding)
+    }
+
+    CanDeferEnter(binding) {
+        return this.NavigationPending && this.QueuedNavigation.Length && !this.Sending && !this.Accepting
+            && binding.Vk = 13 && binding.Modifiers = 0
+            && A_TickCount - this.LastInputAt <= 350 && this.Items.Length
+            && !this.Tracker.Blocked && EacSuggestionEngine.ValidPrefix(this.Tracker.Word)
+            && this.BindingPermitted(binding) && this.NavigationTargetValid(binding)
+    }
+
+    AdvanceSelection(action) {
+        if !this.Items.Length
+            return
+        if !this.Navigating || this.Selected < 1
+            this.Selected := action = "previous" ? this.Items.Length : 1
+        else
+            this.Selected := Mod(this.Selected - 1 + (action = "previous" ? -1 : 1) + this.Items.Length, this.Items.Length) + 1
+        this.Navigating := true
+        if this.Selected >= this.Config.InitialCandidates
+            this.Expanded := true
+    }
+
     Action(binding, *) {
+        if this.CanDeferTab(binding) {
+            this.LastTabDecision := 8
+            if this.QueuedNavigation.Length < 32
+                this.QueuedNavigation.Push(binding.Action)
+            SetTimer this.RefreshCallback, -1
+            return
+        }
+        if binding.Vk = 13 && binding.Modifiers = 0 && this.CanDeferEnter(binding) {
+            if !this.EnterActionArmed
+                return
+            this.EnterActionArmed := false
+            this.EnterLatched := this.EnterReleaseSerial = this.EnterArmedSerial
+            this.QueuedAccept := true
+            SetTimer this.RefreshCallback, -1
+            return
+        }
         if binding.Action = "forget" {
             if !this.DeleteActionArmed
                 return
@@ -559,11 +664,7 @@ class EacApplication {
             return
         }
         if binding.Action = "next" || binding.Action = "previous" {
-            if !this.Navigating || this.Selected < 1
-                this.Selected := binding.Action = "previous" ? this.Items.Length : 1
-            else
-                this.Selected := Mod(this.Selected - 1 + (binding.Action = "previous" ? -1 : 1) + this.Items.Length, this.Items.Length) + 1
-            this.Navigating := true
+            this.AdvanceSelection(binding.Action)
             this.RenderSelection()
             return
         }
@@ -664,7 +765,7 @@ class EacApplication {
             this.Reset()
             return false
         }
-        word := EacSuggestionEngine.ApplyCase(this.Items[this.Selected].Word, prefix)
+        word := EacSuggestionEngine.CompletionWord(this.Items[this.Selected], prefix)
         if StrLower(SubStr(word, 1, StrLen(prefix))) != StrLower(prefix) {
             this.Reset()
             return false
@@ -779,6 +880,8 @@ class EacApplication {
 
     DiagnosticPacket(query := 0, *) {
         ; Read-only, cached numeric status. No field text, word, URL or title.
+        if query = 15
+            return (this.NavigationPending ? 1 : 0) | (this.QueuedAccept ? 2 : 0) | (this.QueuedNavigation.Length << 8)
         if query = 2
             return EacUiaFieldProvider.Stage | (EacUia.LastProperty << 8) | (EacUia.LastVariantType << 32)
         if query = 3

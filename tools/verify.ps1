@@ -6,7 +6,8 @@ param(
     [switch]$ImeIntegration,
     [switch]$Dpi,
     [switch]$SelectionIntegration,
-    [switch]$ForgetIntegration
+    [switch]$ForgetIntegration,
+    [switch]$ContinuationIntegration
 )
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -52,6 +53,7 @@ if (Test-Path (Join-Path $root 'tests/manage.ahk')) { Invoke-Ahk (Join-Path $roo
 if (Test-Path (Join-Path $root 'tests/transfer.ahk')) { Invoke-Ahk (Join-Path $root 'tests/transfer.ahk') }
 if (Test-Path (Join-Path $root 'tests/it-dictionary.ahk')) { Invoke-Ahk (Join-Path $root 'tests/it-dictionary.ahk') }
 if (Test-Path (Join-Path $root 'tests/mouse-watch.ahk')) { Invoke-Ahk (Join-Path $root 'tests/mouse-watch.ahk') }
+if (Test-Path (Join-Path $root 'tests/continuation.ahk')) { Invoke-Ahk (Join-Path $root 'tests/continuation.ahk') }
 if ($Integration) { Invoke-Ahk (Join-Path $root 'tests/integration.ahk') }
 elseif ($CaseOnly) { Invoke-Ahk -Script (Join-Path $root 'tests/integration.ahk') -ExtraArgs @('--case-only') }
 elseif ($LearningOnly) { Invoke-Ahk -Script (Join-Path $root 'tests/integration.ahk') -ExtraArgs @('--learning-only') }
@@ -59,3 +61,4 @@ if ($ImeIntegration) { Invoke-Ahk (Join-Path $root 'tests/ime-integration.ahk') 
 if ($Dpi) { Invoke-Ahk (Join-Path $root 'tests/dpi.ahk') }
 if ($SelectionIntegration) { Invoke-Ahk (Join-Path $root 'tests/selection-integration.ahk') }
 if ($ForgetIntegration) { Invoke-Ahk (Join-Path $root 'tests/forget-integration.ahk') }
+if ($ContinuationIntegration) { Invoke-Ahk -Script (Join-Path $root 'tests/selection-integration.ahk') -ExtraArgs @('--continuation-only') }

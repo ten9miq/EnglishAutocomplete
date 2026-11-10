@@ -87,6 +87,10 @@ Windows 11の新しいメモ帳の内部コントロールが対応クラスか�
 
 候補がない場合・対象外欄・アプリ無効時・IME ONでは新しいキー押下を横取りしない。数字単独は選択開始前と非表示番号では通常入力へ渡す。SpaceとShift+Spaceは候補表示中・選択中も空白入力へ渡し、単語区切りとして選択を終了する。左右移動・通常文字入力・削除用×以外のクリック・Escでも選択を終了する。Ctrl+Alt+Tabは登録しない。Ctrl+Alt+Spaceは未選択でも明示的に1件目を確定するショートカットとして残す。状態が変わった直後の確定は再検証で中止される。`ImeStyle=0`で標準キーによる操作をアプリ別にも無効化できる。
 
+選択後に文字を追加すると古い候補はすぐ隠し、最新の文字列で候補を更新する。直前に候補を表示していた同じ入力欄では、更新待ちのTab/Shift+Tabを最大350msの範囲で新しい候補の選択へ引き継ぐ。この間もフォーカス・IME・アプリ設定を確認し、不明な状態や別欄ではキーを横取りしない。新しい候補が得られなければ選択を取り消す。続けてEnterを押した場合も、更新後の候補と本文を再検証してから確定する。
+
+`it-des`のような入力は、全体に一致する候補がなければ最後の`-`/`.`/`_`の後の部分を検索する。`it-`を残して`des`を補完できる。まず語全体を検索するため、手動登録した`config.toml`などの補完は維持する。後半も既定2文字以上が必要で、既存文字は削除・置換しない。メール、URL、パス、認証情報を示す接頭辞にはこの後半検索を使わず、カーソルの右に語が続く途中位置の保護も維持する。
+
 トレイから全体ON/OFF、単語登録、設定ファイル表示、設定再読込、状態表示、終了を操作できる。全体OFFでは学習も停止する。スタートアップ登録は自動で行わない。
 
 学習候補の削除はTab/矢印で選んだ行だけに対して行う。「×」は選択中の自動学習候補だけに表示し、クリックしても入力先のフォーカスを維持する。削除後は候補を更新して未選択に戻す。未知語は候補から消え、再び2回学習すると戻る。配布辞書にもある語は使用回数・最終日時による加点だけ消え、通常候補に残る。手動登録語と禁止設定はこの操作では削除しない。未選択・未学習・対象外欄・IME ONの新しいCtrl+Delete押下は入力先へ渡す。削除に使った押下のリピートはキーを離すまで抑止する。アプリの`Keys=0`ではクリック削除も無効。明示的なカスタムキーがCtrl+Deleteを使う場合はその設定を優先する。
@@ -126,13 +130,13 @@ AI製品名は [data/ai-supplement.json](data/ai-supplement.json) の小さな�
 
 ### IT用語の日本語説明を管理する
 
-[data/it-descriptions.json](data/it-descriptions.json)を説明の正本としてGit管理する。現在はCSpell由来の64語に独自の短い日本語説明を用意している。例: Kubernetes「コンテナ化したアプリの配置や運用をまとめて制御する基盤」、Docker「アプリと実行に必要なものをコンテナにまとめて動かす基盤」。AI補助16語の説明は従来のJSONで管理する。
+[data/it-descriptions.jsonl](data/it-descriptions.jsonl)を説明の正本としてGit管理する。現在はCSpell由来の128語に独自の短い日本語説明を用意している。例: Kubernetes「コンテナ化したアプリの配置や運用をまとめて制御する基盤」、Docker「アプリと実行に必要なものをコンテナにまとめて動かす基盤」。AI補助16語の説明は従来のJSONで管理する。JSONLは1語を1行のJSONオブジェクトで記録する形式で、JSON配列より件数上限が増えるものではないが、追加・差分確認を行いやすい。[形式と更新方針](docs/IT_DESCRIPTIONS.md)も参照。
 
-各レコードに`word`（大小文字を区別しない照合キー）、`description`（100文字以内の1行）、`reference_url`（確認に用いたHTTPS URL）、`license`（MIT）、`verified_on`（YYYY-MM-DD）、`origin`（original）、`review_status`（draft/reviewed）を保存する。参考URLは技術的事実の確認元で、説明文の転載元・翻訳元を意味しない。説明は本プロジェクトで独自に作成し、プロジェクトのMITで提供する。外部の説明文や別ライセンスの文章は、この形式でMITと記載して取り込まない。
+各行に`word`（大小文字を区別しない照合キー）、`description`（100文字以内の1行）、`reference_url`（確認に用いたHTTPS URL）、`license`（MIT）、`verified_on`（YYYY-MM-DD）、`origin`（original）、`review_status`（draft/reviewed）を保存する。空行・コメント・外側の配列・重複キーは認めず、不正な行は行番号付きで生成エラーにする。参考URLは技術的事実の確認元で、説明文の転載元・翻訳元を意味しない。説明は本プロジェクトで独自に作成し、プロジェクトのMITで提供する。外部の説明文や別ライセンスの文章は、この形式でMITと記載して取り込まない。
 
 説明を追加・修正するときは、対象語がCSpellにあることを確認し、公式資料で事実を照合して短文を作成する。確認前は`draft`、確認済みなら`reviewed`とし、確認日とURLを更新する。生成時は全レコードの形式・出典・ライセンス・日付・重複・既存語との一致を検証し、`reviewed`だけをDBへ反映する。新しい説明のために語彙・表記・点数・prefix索引を変えない。
 
-更新は本体と管理画面を終了して`python tools/build_dictionary.py`を実行し、検証後に本体を起動する。JSON、生成済み`data/dictionary.db`とmanifestを一緒に管理する。DBでは説明を`it_entries.translation`へ、参考URL・ライセンス・確認日等を`it_description_provenance`へ保持し、JSONのSHA256と採用件数をmanifestへ記録する。取得したWebページの本文は同梱せず、起動時や入力時にWebへ照会しない。
+更新は本体と管理画面を終了して`python tools/build_dictionary.py`を実行し、検証後に本体を起動する。JSONL、生成済み`data/dictionary.db`とmanifestを一緒に管理する。DBでは説明を`it_entries.translation`へ、参考URL・ライセンス・確認日等を`it_description_provenance`へ保持し、正本ファイル名・SHA256・採用件数をmanifestへ記録する。取得したWebページの本文は同梱せず、起動時や入力時にWebへ照会しない。
 
 ### 有効化と候補順位
 
@@ -256,6 +260,8 @@ python tools/build_dictionary.py --size 70
 ./tools/verify.ps1 -Dpi
 # 未選択→初回Tab→Enterと長押しを専用Editで約2秒確認する
 ./tools/verify.ps1 -SelectionIntegration
+# 追加入力→Tab再選択と、独立送信プロセスによるTab→Enterを専用Editで確認する
+./tools/verify.ps1 -ContinuationIntegration
 # 選択した学習候補のCtrl+Delete・右端×を専用Editで確認する
 ./tools/verify.ps1 -ForgetIntegration
 ```

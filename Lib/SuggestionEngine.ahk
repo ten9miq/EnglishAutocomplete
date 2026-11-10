@@ -10,6 +10,23 @@ class EacSuggestionEngine {
     }
 
     Search(prefix) {
+        items := this.SearchWhole(prefix)
+        if items.Length
+            return items
+        tail := EacSuggestionEngine.SegmentPrefix(prefix)
+        if tail = "" || StrLen(tail) < this.Config.MinLength
+            return items
+        items := this.SearchWhole(tail)
+        for item in items {
+            ; Keep the entire observed token for field/commit validation. Only
+            ; the last segment is looked up; existing text is never replaced.
+            item.InputPrefix := prefix
+            item.CompletionPrefix := tail
+        }
+        return items
+    }
+
+    SearchWhole(prefix) {
         prefix := StrLower(prefix)
         if StrLen(prefix) < this.Config.MinLength || !EacSuggestionEngine.ValidPrefix(prefix)
             return []
@@ -79,6 +96,26 @@ class EacSuggestionEngine {
         while result.Length > this.Config.MaxCandidates
             result.Pop()
         return result
+    }
+
+    static SegmentPrefix(prefix) {
+        ; A safe compound token may contain filename/identifier separators.
+        ; Emails, URLs, paths and credential-shaped tokens never use fallback.
+        if !EacUserDictionary.Valid(prefix, true)
+            || RegExMatch(prefix, "i)^(?:token|secret|password|apikey|bearer|authorization)[_A-Za-z0-9.-]*$")
+            return ""
+        return RegExMatch(prefix, "[-._]([A-Za-z][A-Za-z0-9]*)$", &part) ? part[1] : ""
+    }
+
+    static CompletionWord(item, prefix) {
+        if !item.HasOwnProp("InputPrefix")
+            return this.ApplyCase(item.Word, prefix)
+        if !(item.InputPrefix == prefix)
+            return ""
+        tail := this.SegmentPrefix(prefix)
+        if tail = "" || !(tail == item.CompletionPrefix)
+            return ""
+        return SubStr(prefix, 1, StrLen(prefix) - StrLen(tail)) this.ApplyCase(item.Word, tail)
     }
 
     static ApplyCase(word, prefix) {

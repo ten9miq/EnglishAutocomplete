@@ -60,44 +60,65 @@ def cspell_words(content):
             yield word
 
 
-def description_records(document, available):
-    """Validate the original-description source of truth before touching output."""
-    if (not isinstance(document, dict) or type(document.get("version")) is not int
-            or document.get("version") != 1 or document.get("language") != "ja"):
-        raise ValueError("Unsupported IT description format")
-    if not isinstance(document.get("entries"), list):
-        raise ValueError("IT descriptions must contain an entries array")
+def description_records(content, available):
+    """Validate UTF-8 JSONL, one original-description object per physical line."""
+    if not isinstance(content, str) or not content:
+        raise ValueError("IT description line 1: expected nonempty JSONL text")
+
+    def unique_keys(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("Duplicate JSON key: " + key)
+            result[key] = value
+        return result
+
+    required = {"word", "description", "reference_url", "license", "verified_on", "origin", "review_status"}
     reviewed, seen = {}, set()
-    for entry in document["entries"]:
-        if not isinstance(entry, dict):
-            raise ValueError("Invalid IT description record")
-        word = entry.get("word", "")
-        norm = normalize(word) if isinstance(word, str) else None
-        if not norm or len(word) < 2 or word != word.strip() or norm not in available or norm in seen:
-            raise ValueError("Unknown or duplicate IT description word: " + str(word))
-        seen.add(norm)
-        text = entry.get("description", "")
-        if (not isinstance(text, str) or not 1 <= len(text) <= 100 or text != text.strip()
-                or any(ord(c) < 32 or ord(c) == 127 or c in "\u2028\u2029" for c in text)):
-            raise ValueError("IT descriptions must be short, nonempty single lines: " + word)
-        reference = entry.get("reference_url", "")
-        if not isinstance(reference, str) or any(c.isspace() for c in reference):
-            raise ValueError("Invalid IT description reference: " + word)
-        parsed = urlsplit(reference)
-        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
-            raise ValueError("IT descriptions require an HTTPS reference: " + word)
-        if entry.get("license") != "MIT" or entry.get("origin") != "original":
-            raise ValueError("Only original MIT descriptions are supported: " + word)
-        verified = entry.get("verified_on", "")
-        if not isinstance(verified, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", verified):
-            raise ValueError("IT descriptions require an ISO verification date: " + word)
-        date.fromisoformat(verified)
-        status = entry.get("review_status")
-        if status not in ("draft", "reviewed"):
-            raise ValueError("Invalid IT description review status: " + word)
-        if status == "reviewed":
-            reviewed[norm] = entry
+    # A single final LF terminates the final record; it is not a blank record.
+    lines = content.split("\n")
+    if lines[-1] == "":
+        lines.pop()
+    for line_number, line in enumerate(lines, 1):
+        try:
+            if not line.strip():
+                raise ValueError("Blank lines are not supported")
+            entry = json.loads(line, object_pairs_hook=unique_keys)
+            _validate_description(entry, available, seen, required)
+        except ValueError as error:
+            raise ValueError("IT description line {}: {}".format(line_number, error)) from error
+        if entry["review_status"] == "reviewed":
+            reviewed[normalize(entry["word"])] = entry
     return reviewed
+
+
+def _validate_description(entry, available, seen, required):
+    if not isinstance(entry, dict) or set(entry) != required:
+        raise ValueError("Invalid IT description record")
+    word = entry.get("word", "")
+    norm = normalize(word) if isinstance(word, str) else None
+    if not norm or len(word) < 2 or word != word.strip() or norm not in available or norm in seen:
+        raise ValueError("Unknown or duplicate IT description word: " + str(word))
+    seen.add(norm)
+    text = entry.get("description", "")
+    if (not isinstance(text, str) or not 1 <= len(text) <= 100 or text != text.strip()
+            or any(ord(c) < 32 or ord(c) == 127 or c in "\u2028\u2029" for c in text)):
+        raise ValueError("IT descriptions must be short, nonempty single lines: " + word)
+    reference = entry.get("reference_url", "")
+    if not isinstance(reference, str) or any(c.isspace() for c in reference):
+        raise ValueError("Invalid IT description reference: " + word)
+    parsed = urlsplit(reference)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError("IT descriptions require an HTTPS reference: " + word)
+    if entry.get("license") != "MIT" or entry.get("origin") != "original":
+        raise ValueError("Only original MIT descriptions are supported: " + word)
+    verified = entry.get("verified_on", "")
+    if not isinstance(verified, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", verified):
+        raise ValueError("IT descriptions require an ISO verification date: " + word)
+    date.fromisoformat(verified)
+    status = entry.get("review_status")
+    if status not in ("draft", "reviewed"):
+        raise ValueError("Invalid IT description review status: " + word)
 
 
 def archives(fetch=False):
@@ -214,8 +235,8 @@ def compile_dictionary(paths, output, size=60):
     for name in CSPELL_FILES:
         for word in cspell_words(paths["cspell"][name].read_text("utf-8-sig")):
             add_it(word, 4)
-    description_path = ROOT / "data" / "it-descriptions.json"
-    descriptions = description_records(json.loads(description_path.read_text("utf-8")),
+    description_path = ROOT / "data" / "it-descriptions.jsonl"
+    descriptions = description_records(description_path.read_text("utf-8"),
                                        {norm for norm, source in it_entries if source == 4})
     for norm, entry in descriptions.items():
         display, score, _ = it_entries[norm, 4]
@@ -301,6 +322,7 @@ def compile_dictionary(paths, output, size=60):
                     "ai_supplement_sha256": hashlib.sha256(supplement_path.read_bytes()).hexdigest(),
                     "ai_verified_on": supplement["verified_on"],
                     "it_description_count": str(len(descriptions)),
+                    "it_descriptions_file": description_path.name,
                     "it_descriptions_sha256": hashlib.sha256(description_path.read_bytes()).hexdigest(),
                     "it_description_license": "MIT"}
         metadata["possessives"] = "untranslated base+'s excluded until apostrophe; contractions retained"

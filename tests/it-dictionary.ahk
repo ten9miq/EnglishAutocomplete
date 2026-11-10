@@ -30,7 +30,17 @@ for pair in [["kuber", "kubernetes"], ["terrafor", "terraform"], ["kubec", "kube
 Assert(Find(Engine.Search("kuber"), "kubernetes").Translation == "コンテナ化したアプリの配置や運用をまとめて制御する基盤", "curated Japanese IT description reaches candidate")
 baseDocker := Engine.Db.Query("SELECT translation FROM words WHERE norm='docker'")[1][1]
 Assert(Find(Engine.Search("docke"), "docker").Translation == "アプリと実行に必要なものをコンテナにまとめて動かす基盤", "IT description overrides ordinary English homonym")
-Assert(Find(Engine.Search("kustom"), "kustomize").Translation == "[IT]", "unannotated IT word keeps fallback label")
+fallbackFound := false
+for row in Engine.Db.Query("SELECT w.norm FROM words w JOIN it_entries it ON it.word_id=w.id "
+    "WHERE it.source=4 AND w.source=4 AND it.translation='' AND length(w.norm) BETWEEN 5 AND 20 ORDER BY w.norm LIMIT 100") {
+    candidate := Find(Engine.Search(SubStr(row[1], 1, -1)), row[1])
+    if candidate {
+        Assert(candidate.Translation == "[IT]", "unannotated IT word keeps fallback label")
+        fallbackFound := true
+        break
+    }
+}
+Assert(fallbackFound, "fallback test covers a genuinely unannotated word")
 Assert(Find(Engine.Search("oll"), "ollama").Translation == "AIモデルの実行環境", "existing AI supplement description remains visible")
 item := Find(Engine.Search("curso"), "cursor")
 Assert(item && item.Word == "Cursor", "AI spelling overrides shared ordinary word while enabled")

@@ -154,10 +154,13 @@ class NavigationApp extends EacApplication {
         this.Config := {Enabled: true, AcceptKey: "^!Space", NextKey: "Tab", PreviousKey: "^!Up",
             CancelKey: "Esc", DirectModifier: "^!", DebounceMs: 30, InitialCandidates: 5}
         this.RefreshCallback := ObjBindMethod(this, "Refresh")
+        this.Gui := NavigationGui()
         this.Ready()
         this.Ime := NavigationIme()
     }
     Ready() {
+        this.NavigationPending := false, this.QueuedNavigation := [], this.QueuedAccept := false
+        this.Gui.Visible := true
         this.Allowed := true
         this.Visible := true, this.Navigating := false, this.Selected := 0, this.Committed := 0
         this.Expanded := false
@@ -180,6 +183,7 @@ class NavigationApp extends EacApplication {
             this.Reset()
     }
     Reset(*) {
+        this.NavigationPending := false, this.QueuedNavigation := [], this.QueuedAccept := false
         this.Visible := false, this.Navigating := false, this.Selected := 0, this.Committed := 0
     }
     Commit() {
@@ -200,6 +204,11 @@ class NavigationApp extends EacApplication {
         this.Visible := false
         return true
     }
+}
+
+class NavigationGui {
+    Visible := true
+    Hide() => this.Visible := false
 }
 
 class NavigationIme {

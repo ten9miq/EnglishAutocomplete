@@ -8,8 +8,10 @@ InstallMouseHook()
 Root := A_ScriptDir "\.."
 Checks := 0
 App := false
+Failing := false
 FixtureHwnd := 0
 FixturePid := 0
+InputSenderPid := 0
 EditHwnd := 0
 EnterHeld := false
 PreviousWindow := WinExist("A")
@@ -46,6 +48,13 @@ Sleep 80
 Guard()
 Assert(App.Ime.GetState(EacFieldGuard.Context()).Allowed, "real ENG layout allowed")
 SetKeyDelay 5, 5
+
+if A_Args.Length && A_Args[1] = "--continuation-only" {
+    RunContinuationTests()
+    Record("PASS continuation_integration_checks=" Checks " AHK=" A_AhkVersion)
+    Cleanup()
+    ExitApp 0
+}
 
 ; No initial selection: Enter reaches the native multiline Edit exactly once.
 Prepare()
@@ -138,6 +147,93 @@ AssertUnselected() {
     Assert(App.Gui.Numbers[1].Text == "1", "unselected row has a separate number gutter")
 }
 
+RunContinuationTests() {
+    global App, Settings
+    ; Force the update gap in this isolated instance. All OS input remains
+    ; guarded to the disposable Edit, with physical activity causing abort.
+    SetTimer App.TickCallback, 0
+    Settings.DebounceMs := 150
+    Prepare()
+    TypeFixture("co")
+    SendFixture "{Tab}"
+    Sleep 50
+    Assert(App.Selected = 1 && App.Navigating, "initial real Tab selects preview")
+    prefix := "co"
+    loop parse "mpute" {
+        SendFixture A_LoopField
+        prefix .= A_LoopField
+        Sleep 20
+        Assert(App.NavigationPending && !App.Gui.Visible, "typing hides stale selected preview")
+        SendFixture "{Tab}"
+        refreshDeadline := A_TickCount + 700
+        while (!App.Visible || !App.Navigating || App.Selected != 1) && A_TickCount < refreshDeadline {
+            Guard()
+            Sleep 10
+        }
+        Assert(App.Visible && App.Selected = 1 && App.Navigating, "real Tab selects refreshed prefix " prefix)
+        Assert(Value() == prefix, "repeat selection does not insert Tab or complete text")
+    }
+    beforeCommits := App.CommitCount
+    expected := prefix SubStr(EacSuggestionEngine.CompletionWord(App.Items[1], prefix), StrLen(prefix) + 1)
+    SendFixture "{Enter}"
+    Sleep 100
+    Assert(App.CommitCount = beforeCommits + 1 && Value() == expected, "Enter completes after repeated type/select cycles")
+    loop 3 {
+        Prepare()
+        TypeFixture("co"), SendFixture("{Tab}")
+        Sleep 40
+        SendFixture "m"
+        Sleep 20
+        Assert(App.NavigationPending, "fast confirmation begins inside refresh gap")
+        beforeCommits := App.CommitCount
+        SendExternal("tab-enter")
+        refreshDeadline := A_TickCount + 700
+        while App.CommitCount = beforeCommits && A_TickCount < refreshDeadline {
+            Guard()
+            Sleep 10
+        }
+        Assert(App.CommitCount = beforeCommits + 1 && !InStr(Value(), "`n"), "external fast Tab Enter completes once without newline")
+    }
+    Prepare()
+    App.User.Observe("description", true)
+    TypeFixture("it-des")
+    Assert(App.Items.Length && App.Items[1].Norm == "description", "compound suffix appears in real candidate GUI")
+    SendExternal("tab-enter")
+    Sleep 150
+    Assert(Value() == "it-description", "real completion preserves existing hyphen stem")
+    Prepare()
+    TypeFixture("co")
+    beforeCommits := App.CommitCount
+    SendExternal("enter")
+    Sleep 80
+    Assert(Value() == "co`n" && App.CommitCount = beforeCommits, "external unselected Enter remains native")
+}
+
+SendExternal(mode) {
+    global FixtureHwnd, FixturePid, EditHwnd, TestDirectory, InputSenderPid
+    Guard()
+    resultPath := TestDirectory "\external-input.txt"
+    if FileExist(resultPath)
+        FileDelete resultPath
+    ; The receiver remains in its message loop while a separate process sends
+    ; input, as with real typing. Self-SendEvent can postpone our own Actions.
+    senderCommand := '"' A_AhkPath '" /ErrorStdOut "' A_ScriptDir '\continuation-input.ahk" '
+        . FixtureHwnd ' ' FixturePid ' ' EditHwnd ' "' resultPath '" ' mode
+    Run senderCommand, , "Hide", &InputSenderPid
+    deadline := A_TickCount + 1800
+    while ProcessExist(InputSenderPid) && A_TickCount < deadline {
+        Guard()
+        Sleep 10
+    }
+    if ProcessExist(InputSenderPid)
+        throw Error("External input helper timed out")
+    InputSenderPid := 0
+    result := FileExist(resultPath) ? FileRead(resultPath, "UTF-8") : "no result file"
+    if result != "PASS"
+        throw Error("External input helper: " result)
+    Guard()
+}
+
 Prepare() {
     global App, EditHwnd
     Guard()
@@ -220,19 +316,33 @@ Record(message) {
 Timeout() => Fail(Error("Selection integration exceeded seven seconds; abort input"))
 
 Fail(err, *) {
-    global App
+    global App, Failing, FixtureHwnd, FixturePid, EditHwnd
+    if Failing
+        ExitApp 1
+    Failing := true
+    Record("FAIL " err.Message " at " err.File ":" err.Line "`n" err.Stack)
     if App
         Record("STATE selected=" App.Selected " navigating=" App.Navigating
             " visible=" App.Visible " commits=" App.CommitCount " fault=" App.Fault)
-    Record("FAIL " err.Message " at " err.File ":" err.Line "`n" err.Stack)
+    if App && App.HasOwnProp("Trace")
+        for entry in App.Trace
+            Record(entry)
+    if FixtureHwnd && EditHwnd && WinExist("ahk_id " FixtureHwnd) && WinGetPID("ahk_id " FixtureHwnd) = FixturePid {
+        try {
+            value := StrReplace(ControlGetText(EditHwnd), "`r`n", "`n")
+            Record("STATE fixture_length=" StrLen(value) " has_newline=" (!!InStr(value, "`n")))
+        }
+    }
     Cleanup()
     ExitApp 1
 }
 
 Cleanup(*) {
-    global App, FixtureHwnd, FixturePid, PreviousLayout, PreviousWindow, TestDirectory
+    global App, FixtureHwnd, FixturePid, InputSenderPid, PreviousLayout, PreviousWindow, TestDirectory
     SetTimer Timeout, 0
     ReleaseEnter()
+    if InputSenderPid && ProcessExist(InputSenderPid)
+        ProcessClose InputSenderPid
     if App {
         App.Stop()
         App.User.Db.Close()
@@ -251,14 +361,49 @@ Cleanup(*) {
         for suffix in ["", "-journal", "-wal", "-shm"]
             if FileExist(TestDirectory "\user.db" suffix)
                 try FileDelete TestDirectory "\user.db" suffix
+        if FileExist(TestDirectory "\external-input.txt")
+            FileDelete TestDirectory "\external-input.txt"
         try DirDelete TestDirectory
     }
 }
 
 class SelectionTestApplication extends EacApplication {
     Observed := ""
+    Trace := []
+    Note(event) {
+        this.Trace.Push(A_TickCount " " event " pending=" this.NavigationPending " q=" this.QueuedNavigation.Length
+            " qa=" this.QueuedAccept " vis=" this.Visible " sel=" this.Selected " len=" StrLen(this.Tracker.Word)
+            " gen=" this.Tracker.Generation " shown=" this.ShownGeneration " armed=" this.EnterActionArmed " latch=" this.EnterLatched)
+        if this.Trace.Length > 80
+            this.Trace.RemoveAt(1)
+    }
     OnChar(hook, text) {
+        this.Note("char-before n=" StrLen(text) " boundary=" (!!RegExMatch(text, "^\s+$")))
         this.Observed .= text
         super.OnChar(hook, text)
+        this.Note("char-after")
+    }
+    OnKeyDown(hook, vk, sc) {
+        if vk = 9 || vk = 13
+            this.Note("key-before vk=" vk)
+        super.OnKeyDown(hook, vk, sc)
+        if vk = 9 || vk = 13
+            this.Note("key-after vk=" vk)
+    }
+    Action(binding, *) {
+        this.Note("action-before " binding.Action)
+        super.Action(binding)
+        this.Note("action-after " binding.Action)
+    }
+    CanIntercept(binding, *) {
+        allowed := super.CanIntercept(binding)
+        if binding.Vk = 9 || binding.Vk = 13
+            this.Note("condition vk=" binding.Vk " allow=" allowed)
+        return allowed
+    }
+    Refresh() {
+        this.Note("refresh-before")
+        super.Refresh()
+        this.Note("refresh-after")
     }
 }
