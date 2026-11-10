@@ -8,6 +8,7 @@ dist/
 *.log
 logs/
 *.zip
+*.csv
 *.db
 !data/dictionary.db
 *.db-journal

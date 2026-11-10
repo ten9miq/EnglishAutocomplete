@@ -126,11 +126,26 @@ Windows 11の新しいメモ帳の内部コントロールが対応クラスか�
 
 管理コマンドは本体と別の `ManageDictionary.ahk`。常駐本体のSingleInstance処理を発生させずにDBを操作する。
 
+常駐本体のトレイメニュー「辞書管理画面を開く」から管理画面を別プロセスで開ける。`ManageDictionary.ahk`をダブルクリック（引数なし）すると、エラーではなく使い方を表示する。「辞書管理画面を開く」ボタン、または`--gui`でも管理画面を開ける。使い方の表示だけでは設定・個人DBを作成しない。
+
+管理画面では個人辞書を検索し、手動登録・自動学習・禁止で絞り込める。行を選ぶと「操作する単語」へ入り、登録/表記更新、禁止、禁止解除、個人データ削除を行える。全単語の頻度初期化と個人辞書の全消去も可能。禁止・削除・初期化は確認ダイアログを表示する。禁止するとその語の使用回数と手動登録状態も消えるため、解除後に必要なら再登録する。
+
+配布辞書は閲覧専用で、単語または日本語訳の部分一致検索ができる。両辞書とも100件ずつ表示し、前後のページへ移動できる。配布辞書の語も選んで個人辞書へ登録・禁止できるが、配布辞書自体は書き換えない。「個人データ削除」では配布辞書の語は残る。常駐本体は再起動不要で、管理操作後の新しい候補検索からDBの変更を参照する。本体が増やした学習履歴を管理画面で見る場合は「再読込」を押す。
+
+「エクスポート（CSV）」は個人辞書全件（手動登録・学習履歴・禁止・使用回数・最終使用日時）をUTF-8 BOM付きCSVへ保存する。検索条件や表示ページに関係なく全件を保存し、配布辞書・設定は含めない。保存先は`.csv`に限定し、既存ファイルの上書きは保存ダイアログで確認する。
+
+「インポート（CSV）」はエクスポートしたCSVを読み込み、確認後に個人辞書へ統合する。既定では同じ単語の既存データを保持して新しい語だけ追加する。「同じ単語があれば取込値で上書き」を選ぶと、表記・回数・日時・手動登録・禁止をCSVの値で置き換える（回数は加算しない）。CSVにない既存語は削除しない。全行を事前検証し、不正な行・重複語・DBロック・書込失敗があれば全体を取り消し、一部だけを反映しない。取込後10000語まで、CSVは8MiB以下・データ10000行まで。
+
+CSVの列は固定で、先頭行は`word,uses,last_used,manual,blocked`。`word`は手動登録と同じ2～64文字の英単語、`uses`は0～2147483647、`last_used`はUnix秒（UTC、0は未使用）、`manual`/`blocked`は0か1。重複判定は大文字・小文字を区別しない。改行はCRLF/LF、引用符付きフィールドにも対応する。取り込みたい語を新規登録する例は`MyInternalTool,0,0,1,0`。Excel等で編集する場合はUTF-8 CSVとして保存する。個人データを含むため、CSVはGit管理や配布ZIPへ含めない。
+
 ```powershell
 $ahk = "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe"
+& $ahk '.\ManageDictionary.ahk' '--help'
+& $ahk '.\ManageDictionary.ahk' '--gui'
 & $ahk '.\ManageDictionary.ahk' '--add' 'MyInternalTool'
 & $ahk '.\ManageDictionary.ahk' '--add' 'config.toml'
 & $ahk '.\ManageDictionary.ahk' '--block' 'unwantedWord'
+& $ahk '.\ManageDictionary.ahk' '--unblock' 'unwantedWord'
 & $ahk '.\ManageDictionary.ahk' '--delete' 'unwantedWord'
 & $ahk '.\ManageDictionary.ahk' '--reset-frequency'
 & $ahk '.\ManageDictionary.ahk' '--reset-user'

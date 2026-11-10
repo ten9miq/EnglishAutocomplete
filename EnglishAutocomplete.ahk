@@ -16,6 +16,7 @@ try {
     A_TrayMenu.Delete()
     A_TrayMenu.Add("有効 / 無効", (*) => EacToggle())
     A_TrayMenu.Add("単語を手動登録", (*) => EacRegister())
+    A_TrayMenu.Add("辞書管理画面を開く", (*) => EacOpenDictionaryManager())
     A_TrayMenu.Add("設定を開く", (*) => Run('notepad.exe "' EacSettings.Path '"'))
     A_TrayMenu.Add("設定を再読込", (*) => Reload())
     A_TrayMenu.Add("診断状態", (*) => MsgBox("状態: " (EacSettings.Enabled ? "有効" : "無効")
@@ -43,4 +44,10 @@ EacRegister() {
     result := InputBox("登録する単語 (文章・認証情報は登録しないでください)", "EnglishAutocomplete")
     if result.Result = "OK"
         MsgBox EacApp.User.Observe(Trim(result.Value), true) ? "登録しました" : "登録できませんでした"
+}
+
+EacOpenDictionaryManager() {
+    try Run('"' A_AhkPath '" "' A_ScriptDir '\ManageDictionary.ahk" --gui', A_ScriptDir)
+    catch as err
+        MsgBox "辞書管理画面を開けませんでした。`n" err.Message, "EnglishAutocomplete", "Iconx"
 }
