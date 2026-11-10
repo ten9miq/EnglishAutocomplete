@@ -118,6 +118,10 @@
 
 UIAの安全条件・COM境界・非Chromiumクラスの入口・native拒否からUIAへ迂回しない条件・Document/field位置/アクセシビリティ用Editを646項目で確認（実アプリのUIA実装とは別の模擬APIと非表示HWND試験）。Chrome専用フォーム、Codex、BraveのGoogle検索欄、Word、BraveのSheets/Docsは、上表と検証記録に記した範囲で実入力を確認済み。
 
+### IME照会のタイムアウト
+
+IME照会はERROR_TIMEOUT時だけ最大1回の新しい照会を行い、対象変更・2回の失敗・IME ONでは確定しないこと。実機の安定状態の試験と模擬失敗試験を区別して記録する。
+
 ### Word / Googleエディターの確認手順
 
 1. 新しい使い捨て文書・セルを用意し、IME OFFで半角`confi`を1キーずつ入力する。貼付やDOMの値変更はInputHookの実キー試験として扱わない。

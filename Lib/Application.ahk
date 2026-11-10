@@ -741,6 +741,8 @@ class EacApplication {
             return EacUia.MsaaState
         if query = 10
             return this.HasOwnProp("LastTabDecision") ? this.LastTabDecision : 0
+        if query = 11
+            return this.Ime.LastFailure
         reasons := ["OK", "Disabled", "NoContext", "UnknownField", "UIAUnsafeField",
             "UIAWindowMismatch", "UIAReadOnlyOrRange", "UIARange", "UIATextUnit",
             "UIACaretUnavailable", "TextChanged", "FocusChanged", "UIAUnavailable",

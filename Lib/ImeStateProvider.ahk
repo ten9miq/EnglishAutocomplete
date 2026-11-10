@@ -2,6 +2,8 @@
 
 class EacImeStateProvider {
     NativePriority := false
+    LastFailure := 0
+    LastQueryError := 0
     __New() {
         this.Composition := EacCompositionProvider()
     }
@@ -47,8 +49,14 @@ class EacImeStateProvider {
         if language != 0x411
             return {Known: false, Reason: "UnknownLayout", Layout: hkl}
         ime := DllCall("imm32\ImmGetDefaultIMEWnd", "Ptr", context.Focus, "Ptr")
-        if !ime || !this.Read(ime, 5, &open)
+        if !ime {
+            this.LastFailure := 1
             return {Known: false, Reason: "UnknownIME", Layout: hkl}
+        }
+        if !this.ReadOpenStatus(context, ime, hkl, &open) {
+            this.LastFailure := 2 | (this.LastQueryError << 8)
+            return {Known: false, Reason: "UnknownIME", Layout: hkl}
+        }
         mode := -1
         if open && !this.Read(ime, 1, &mode)
             return {Known: false, Reason: "UnknownConversionMode", Layout: hkl}
@@ -61,11 +69,32 @@ class EacImeStateProvider {
         return current && current.Key = context.Key && current.Thread = context.Thread
     }
 
+    SameImeTarget(context, ime, hkl) => this.IsCurrent(context)
+        && DllCall("GetKeyboardLayout", "UInt", context.Thread, "Ptr") = hkl
+        && DllCall("imm32\ImmGetDefaultIMEWnd", "Ptr", context.Focus, "Ptr") = ime
+        && DllCall("GetWindowThreadProcessId", "Ptr", ime, "Ptr", 0, "UInt") = context.Thread
+
+    ReadOpenStatus(context, ime, hkl, &open) {
+        if this.Read(ime, 5, &open)
+            return true
+        ; A busy Excel message pump can time out one IMC_GETOPENSTATUS even
+        ; while the IME is closed. Retry once with a fresh query, never a cached
+        ; state or a longer timeout. Changed owner/focus/layout still fails shut.
+        if this.LastQueryError != 1460 || !this.SameImeTarget(context, ime, hkl)
+            return false
+        Sleep -1
+        if !this.SameImeTarget(context, ime, hkl) || !this.Read(ime, 5, &open)
+            return false
+        return this.SameImeTarget(context, ime, hkl)
+    }
+
     Read(ime, command, &value) {
         value := 0
-        return !!DllCall("SendMessageTimeoutW", "Ptr", ime, "UInt", 0x283,
+        result := !!DllCall("SendMessageTimeoutW", "Ptr", ime, "UInt", 0x283,
             "Ptr", command, "Ptr", 0, "UInt", 0x22, "UInt", 20,
             "Ptr*", &value, "Ptr")
+        this.LastQueryError := result ? 0 : A_LastError
+        return result
     }
 }
 
