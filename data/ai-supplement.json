@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "verified_on": "2026-11-10",
+  "license": "Project MIT; independently curated names and short descriptions, no copied definitions",
+  "entries": [
+    {"word": "OpenAI", "description": "AI開発企業", "url": "https://github.com/openai/openai-python"},
+    {"word": "ChatGPT", "description": "OpenAIの対話型AI", "url": "https://chatgpt.com/"},
+    {"word": "Codex", "description": "OpenAIのコーディングエージェント", "url": "https://github.com/openai/codex"},
+    {"word": "Anthropic", "description": "Claudeの開発企業", "url": "https://claude.com/product/claude-code"},
+    {"word": "Claude", "description": "AnthropicのAI", "url": "https://claude.com/product/claude-code"},
+    {"word": "Ollama", "description": "AIモデルの実行環境", "url": "https://ollama.com/"},
+    {"word": "Cursor", "description": "AIコーディングツール", "url": "https://cursor.com/"},
+    {"word": "LangChain", "description": "AIアプリ開発基盤", "url": "https://reference.langchain.com/"},
+    {"word": "LangGraph", "description": "AIエージェント開発基盤", "url": "https://github.com/langchain-ai/langgraph"},
+    {"word": "LangSmith", "description": "AIアプリの観測・評価基盤", "url": "https://www.langchain.com/"},
+    {"word": "Gemini", "description": "GoogleのAI", "url": "https://gemini.google.com/"},
+    {"word": "DeepSeek", "description": "AIモデル・開発企業", "url": "https://github.com/deepseek-ai/DeepSeek-V3"},
+    {"word": "Qwen", "description": "AIモデル群", "url": "https://qwen.ai/"},
+    {"word": "Mistral", "description": "AIモデル・開発企業", "url": "https://mistral.ai/"},
+    {"word": "vLLM", "description": "LLM推論エンジン", "url": "https://github.com/vllm-project/vllm"},
+    {"word": "LlamaIndex", "description": "AIアプリ向けデータ連携基盤", "url": "https://www.llamaindex.ai/"}
+  ]
+}

@@ -1,4 +1,4 @@
-"""Reproducible SCOWLv2 + EJDict compiler. Python 3.8+, standard library only.
+"""Reproducible SCOWLv2 + EJDict + IT compiler. Python 3.8+, stdlib only.
 
 Runtime consumes SQLite, not Python or upstream source files. No upstream code
 is executed. Prefix top lists bound runtime work independently of vocabulary size.
@@ -18,7 +18,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCES = {
     "scowl": ("engramtech/scowl", "3373b9f12dce7016c9df2713ef733131e9022bc1"),
     "ejdict": ("kujirahand/EJDict", "2dd9e71ffcefce89b4d946ce07bf51fa0573aac0"),
+    "cspell": ("streetsidesoftware/cspell-dicts", "db01cf70052ad247fa7d8ea94a9d8e87af6e358a"),
 }
+CSPELL_FILES = ("coding-terms.txt", "software-terms.txt", "computing-acronyms.txt",
+                "software-services.txt", "network-os.txt", "network-protocols.txt",
+                "cybersecurity-terms.txt", "software-tools.txt")
 TOP = 12
 WORD = re.compile(r"[A-Za-z][A-Za-z0-9_]*(?:['.-][A-Za-z0-9_]+)*\Z")
 PHRASE = re.compile(r"[A-Za-z][A-Za-z0-9_' .-]{2,95}\Z")
@@ -46,12 +50,21 @@ def heads(line):
     return [(w.strip(), translation) for w in head.split(",") if w.strip()]
 
 
+def cspell_words(content):
+    """Take supported full tokens, never code, comment words, or fragments."""
+    for line in content.splitlines():
+        word = line.partition("#")[0].strip()
+        if len(word) >= 2 and normalize(word):
+            yield word
+
+
 def archives(fetch=False):
     cache = ROOT / "tools" / "sources"
     cache.mkdir(parents=True, exist_ok=True)
     lock = json.loads((ROOT / "tools" / "sources.lock.json").read_text("utf-8"))
     result = {}
-    for name, (repo, commit) in SOURCES.items():
+    for name in ("scowl", "ejdict"):
+        repo, commit = SOURCES[name]
         path = cache / (name + ".zip")
         if fetch and not path.exists():
             url = "https://codeload.github.com/{}/zip/{}".format(repo, commit)
@@ -64,11 +77,34 @@ def archives(fetch=False):
         if digest != lock[name]["sha256"]:
             raise ValueError("Source checksum mismatch: " + name)
         result[name] = path
+    repo, commit = SOURCES["cspell"]
+    if lock["cspell"]["commit"] != commit:
+        raise ValueError("CSpell commit mismatch")
+    selected = {}
+    for name in ("LICENSE",) + CSPELL_FILES:
+        path = cache / "cspell" / name
+        expected = lock["cspell"]["files"][name]
+        if fetch and not path.exists():
+            relative = "LICENSE" if name == "LICENSE" else "src/" + name
+            url = "https://raw.githubusercontent.com/{}/{}/dictionaries/software-terms/{}".format(repo, commit, relative)
+            request = urllib.request.Request(url, headers={"User-Agent": "EnglishAutocomplete-builder"})
+            with urllib.request.urlopen(request, timeout=90) as response:
+                content = response.read()
+            if hashlib.sha256(content).hexdigest() != expected:
+                raise ValueError("Source checksum mismatch: cspell/" + name)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+        if not path.exists():
+            raise FileNotFoundError("Run with --fetch: " + str(path))
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise ValueError("Source checksum mismatch: cspell/" + name)
+        selected[name] = path
+    result["cspell"] = selected
     return result
 
 
 def compile_dictionary(paths, output, size=60):
-    entries, phrases = {}, {}
+    entries, phrases, it_entries = {}, {}, {}
 
     def add(word, source, level=99, translation="", frequency=0):
         norm = normalize(word)
@@ -88,6 +124,17 @@ def compile_dictionary(paths, output, size=60):
             if translation and not e[3]:
                 e[3] = translation
             e[4] = max(e[4], frequency)
+
+    def add_it(word, source, description=""):
+        norm = normalize(word)
+        if not norm or len(word) < 2:
+            raise ValueError("Invalid IT entry: " + word)
+        if norm not in entries:
+            entries[norm] = [word, source, 99, "", 0]
+        else:
+            entries[norm][1] |= source
+        # Keep independent spelling/score per IT source; no change to base English.
+        it_entries[norm, source] = (word, 1000, description)
 
     with zipfile.ZipFile(paths["scowl"]) as archive:
         base = archive.namelist()[0]
@@ -121,6 +168,22 @@ def compile_dictionary(paths, output, size=60):
                 if norm in entries:
                     entries[norm][4] = max(entries[norm][4], score)
 
+    (ROOT / "licenses" / "CSpell-software-terms-MIT.txt").write_bytes(paths["cspell"]["LICENSE"].read_bytes())
+    for name in CSPELL_FILES:
+        for word in cspell_words(paths["cspell"][name].read_text("utf-8-sig")):
+            add_it(word, 4)
+    supplement_path = ROOT / "data" / "ai-supplement.json"
+    supplement = json.loads(supplement_path.read_text("utf-8"))
+    if supplement["version"] != 1:
+        raise ValueError("Unsupported AI supplement format")
+    seen = set()
+    for entry in supplement["entries"]:
+        norm = normalize(entry["word"])
+        if norm in seen or not entry["url"].startswith("https://"):
+            raise ValueError("Duplicate AI entry or missing provenance")
+        seen.add(norm)
+        add_it(entry["word"], 8, entry["description"])
+
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix(".tmp")
@@ -136,10 +199,13 @@ def compile_dictionary(paths, output, size=60):
                 score INTEGER NOT NULL, translation TEXT NOT NULL);
             CREATE TABLE prefix_top(prefix TEXT NOT NULL, source INTEGER NOT NULL,
                 ids TEXT NOT NULL, PRIMARY KEY(prefix,source)) WITHOUT ROWID;
+            CREATE TABLE it_entries(word_id INTEGER NOT NULL REFERENCES words(id),
+                  source INTEGER NOT NULL, word TEXT NOT NULL, score INTEGER NOT NULL,
+                  translation TEXT NOT NULL, PRIMARY KEY(word_id,source)) WITHOUT ROWID;
             CREATE TABLE phrases(norm TEXT PRIMARY KEY, phrase TEXT, translation TEXT,
                 source INTEGER) WITHOUT ROWID;
             CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT) WITHOUT ROWID;
-            PRAGMA user_version=1;
+            PRAGMA user_version=2;
         """)
         ranked = []
         for ident, (norm, e) in enumerate(sorted(entries.items()), 1):
@@ -148,28 +214,37 @@ def compile_dictionary(paths, output, size=60):
             con.execute("INSERT INTO words VALUES (?,?,?,?,?,?,?)",
                         (ident, norm, word, source, level, score, translation))
             ranked.append((ident, norm, source, score))
+            for kind in (4, 8):
+                if (norm, kind) in it_entries:
+                    display, it_score, note = it_entries[norm, kind]
+                    con.execute("INSERT INTO it_entries VALUES (?,?,?,?,?)", (ident, kind, display, it_score, note))
         # Sorted by descending score, stable alphabetical tie: first TOP wins.
         prefixes = {}
-        for ident, norm, source, score in sorted(ranked, key=lambda r: (-r[3], r[1])):
-            for length in range(2, len(norm)):
-                # Preserve dictionary data and explicit apostrophe completion,
-                # but keep generated possessives out of ordinary shortlists.
-                if redundant_possessive(norm, entries) and length <= len(norm) - 2:
-                    continue
-                for kind in (1, 2):
-                    if source & kind:
-                        ids = prefixes.setdefault((norm[:length], kind), [])
-                        if len(ids) < TOP:
-                            ids.append(str(ident))
+        for kind in (1, 2, 4, 8):
+            eligible = [(ident, norm, source, it_entries[norm, kind][1] if kind >= 4 else score)
+                        for ident, norm, source, score in ranked if source & kind]
+            for ident, norm, source, score in sorted(eligible, key=lambda r: (-r[3], r[1])):
+                for length in range(2, len(norm)):
+                    # Preserve explicit apostrophe completion without shortlist noise.
+                    if redundant_possessive(norm, entries) and length <= len(norm) - 2:
+                        continue
+                    ids = prefixes.setdefault((norm[:length], kind), [])
+                    if len(ids) < TOP:
+                        ids.append(str(ident))
         con.executemany("INSERT INTO prefix_top VALUES (?,?,?)",
                         ((p, s, ",".join(ids)) for (p, s), ids in sorted(prefixes.items())))
         con.executemany("INSERT INTO phrases VALUES (?,?,?,?)",
                         ((norm,) + e for norm, e in sorted(phrases.items())))
-        metadata = {"schema": "1", "size": str(size), "dialect": "American",
+        metadata = {"schema": "2", "size": str(size), "dialect": "American",
                     "prefix_top": str(TOP), "word_count": str(len(entries)),
                     "phrase_count": str(len(phrases)), "prefix_rows": str(len(prefixes)),
                     "sources": json.dumps(SOURCES, sort_keys=True),
-                    "frequency": "EJDict CC0 100/850/2000 tiers; SCOWL level"}
+                    "frequency": "EJDict CC0 100/850/2000 tiers; SCOWL level; IT base=1000 + configured boost",
+                    "cspell_files": json.dumps(CSPELL_FILES),
+                    "cspell_word_count": str(sum(kind == 4 for norm, kind in it_entries)),
+                    "ai_word_count": str(sum(kind == 8 for norm, kind in it_entries)),
+                    "ai_supplement_sha256": hashlib.sha256(supplement_path.read_bytes()).hexdigest(),
+                    "ai_verified_on": supplement["verified_on"]}
         metadata["possessives"] = "untranslated base+'s excluded until apostrophe; contractions retained"
         con.executemany("INSERT INTO metadata VALUES (?,?)", sorted(metadata.items()))
         con.commit()

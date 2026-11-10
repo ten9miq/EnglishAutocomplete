@@ -42,7 +42,7 @@ class EacDictionaryStore {
             throw Error(this.Personal.Fault)
         try {
             this.Distribution := EacSQLite(config.Root "\data\dictionary.db", true)
-            if this.Distribution.Query("PRAGMA user_version")[1][1] != "1"
+            if this.Distribution.Query("PRAGMA user_version")[1][1] != "2"
                 throw Error("配布辞書の形式に対応していません。")
         } catch as err {
             this.Close()
@@ -66,7 +66,12 @@ class EacDictionaryStore {
             db := this.Distribution, table := "words"
             condition := "(instr(norm,?)>0 OR instr(translation,?)>0)"
             parameters := [search, search]
-            columns := "word,source,translation"
+            if source = 3
+                condition .= " AND (source & 12)!=0"
+            columns := "COALESCE((SELECT word FROM it_entries WHERE word_id=words.id AND source=8),"
+                . "(SELECT word FROM it_entries WHERE word_id=words.id AND source=4),word),source,"
+                . "COALESCE(NULLIF(translation,''),(SELECT translation FROM it_entries WHERE word_id=words.id AND source=8),"
+                . "(SELECT translation FROM it_entries WHERE word_id=words.id AND source=4),'')"
         }
         total := Integer(db.Query("SELECT count(*) FROM " table " WHERE " condition, parameters)[1][1])
         pages := Max(1, Ceil(total / EacDictionaryStore.PageSize))
@@ -99,7 +104,7 @@ class EacDictionaryManager {
         this.Window := Gui(, "EnglishAutocomplete - 辞書管理")
         this.Window.SetFont("s10", "Yu Gothic UI")
         this.Window.AddText("xm w880", "個人辞書の編集と配布辞書の検索。行を選ぶと下の「操作する単語」に入ります。")
-        this.Source := this.Window.AddDropDownList("xm y+12 w190 Choose1", ["個人辞書", "配布辞書（閲覧専用）"])
+        this.Source := this.Window.AddDropDownList("xm y+12 w190 Choose1", ["個人辞書", "配布辞書（閲覧専用）", "IT追加辞書（閲覧専用）"])
         this.Kind := this.Window.AddDropDownList("x+10 w150 Choose1", ["すべて", "手動登録", "自動学習", "禁止"])
         this.Search := this.Window.AddEdit("x+10 w320")
         this.Window.AddButton("x+10 w80 Default", "検索").OnEvent("Click", ObjBindMethod(this, "SearchNow"))
@@ -167,7 +172,7 @@ class EacDictionaryManager {
                 lastUsed := Integer(row[4]) > 0 ? this.LocalTime(Integer(row[4])) : "—"
                 this.List.Add(, row[1], state, row[3], lastUsed, "")
             } else {
-                source := (Integer(row[2]) & 1 ? "SCOWL " : "") (Integer(row[2]) & 2 ? "EJDict" : "")
+                source := EacDictionaryManager.SourceNames(Integer(row[2]))
                 this.List.Add(, row[1], Trim(source), "", "", StrReplace(StrReplace(row[3], "`r", " "), "`n", " "))
             }
         }
@@ -223,6 +228,9 @@ class EacDictionaryManager {
     }
 
     Confirm(prompt) => MsgBox(prompt, "辞書管理 - 確認", "YesNo Default2 Icon! Owner" this.Window.Hwnd) = "Yes"
+
+    static SourceNames(mask) => Trim((mask & 1 ? "SCOWL " : "") (mask & 2 ? "EJDict " : "")
+        (mask & 4 ? "CSpell " : "") (mask & 8 ? "AI補助 " : ""))
 
     SelectTransferPath(save) {
         this.Window.Opt("+OwnDialogs")

@@ -48,7 +48,43 @@ class DictionaryTests(unittest.TestCase):
         self.assertGreater(count, 100000)
         self.assertEqual(count, distinct)
         self.assertEqual(self.db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
-        self.assertEqual(self.db.execute("PRAGMA user_version").fetchone()[0], 1)
+        self.assertEqual(self.db.execute("PRAGMA user_version").fetchone()[0], 2)
+
+    def test_cspell_input_filter(self):
+        self.assertEqual(list(builder.cspell_words("# comment\nKubernetes # tool\nC++\nC#\ntwo words\n!banned\n*fragment\nfoo/bar\npnpm\nA\n")),
+                         ["Kubernetes", "pnpm"])
+
+    def test_it_provenance_and_spelling(self):
+        for word in ("kubernetes", "terraform", "kubectl", "pnpm", "ripgrep", "typescript"):
+            row = self.db.execute("SELECT source FROM words WHERE norm=?", (word,)).fetchone()
+            self.assertIsNotNone(row, word)
+            self.assertTrue(row[0] & 4, word)
+        for word in ("OpenAI", "ChatGPT", "Codex", "Ollama", "LangChain", "LangGraph", "vLLM"):
+            row = self.db.execute("SELECT it.word FROM it_entries it JOIN words w ON w.id=it.word_id WHERE w.norm=? AND it.source=8", (word.lower(),)).fetchone()
+            self.assertEqual(row, (word,))
+        self.assertGreater(self.db.execute("SELECT count(*) FROM it_entries WHERE source=4").fetchone()[0], 3000)
+        self.assertEqual(self.db.execute("SELECT count(*) FROM it_entries WHERE source=8").fetchone()[0], 16)
+        self.assertEqual(self.db.execute("PRAGMA foreign_key_check").fetchall(), [])
+        # IT/AI use separate spellings; disabling them can restore normal English.
+        self.assertEqual(self.db.execute("SELECT word FROM words WHERE norm='codex'").fetchone()[0], "codex")
+
+    def test_it_indexes_and_ai_manifest(self):
+        self.assertIn("kubernetes", [r[0] for r in search(self.db, "kuber", 4)])
+        self.assertIn("chatgpt", [r[0] for r in search(self.db, "chatg", 8)])
+        self.assertNotIn("kubernetes", [r[0] for r in search(self.db, "kuber", 1)])
+        manifest = json.loads((ROOT / "data/dictionary.manifest.json").read_text("utf-8"))
+        self.assertEqual(manifest["ai_supplement_sha256"], hashlib.sha256((ROOT / "data/ai-supplement.json").read_bytes()).hexdigest())
+        paths = builder.archives()
+        lock = json.loads((ROOT / "tools/sources.lock.json").read_text("utf-8"))
+        self.assertEqual(lock["cspell"]["commit"], builder.SOURCES["cspell"][1])
+        for name, path in paths["cspell"].items():
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), lock["cspell"]["files"][name])
+
+    def test_base_vocabulary_unchanged_by_it(self):
+        rows = self.db.execute("SELECT norm,word,score,translation,(source & 3) FROM words WHERE (source & 3)!=0 ORDER BY norm").fetchall()
+        self.assertEqual(len(rows), 113438)
+        digest = hashlib.sha256(json.dumps(rows, ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest()
+        self.assertEqual(digest, "f392a564dc101b4e029aa7b7e27c25e8525ed05a85f4213aa737b13806ac5bf1")
 
     def test_sources_translation_and_inflections(self):
         for word in ("computer", "computers", "confirmed", "configuration"):

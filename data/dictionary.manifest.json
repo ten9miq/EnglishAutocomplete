@@ -1,14 +1,19 @@
 {
-  "bytes": 17182720,
+  "ai_supplement_sha256": "f37850cc551320f5c2a24f102b5a82922fc42fd8d2aa9a0bc8080249551e58fc",
+  "ai_verified_on": "2026-11-10",
+  "ai_word_count": "16",
+  "bytes": 17756160,
+  "cspell_files": "[\"coding-terms.txt\", \"software-terms.txt\", \"computing-acronyms.txt\", \"software-services.txt\", \"network-os.txt\", \"network-protocols.txt\", \"cybersecurity-terms.txt\", \"software-tools.txt\"]",
+  "cspell_word_count": "3966",
   "dialect": "American",
-  "frequency": "EJDict CC0 100/850/2000 tiers; SCOWL level",
+  "frequency": "EJDict CC0 100/850/2000 tiers; SCOWL level; IT base=1000 + configured boost",
   "phrase_count": "13102",
   "possessives": "untranslated base+'s excluded until apostrophe; contractions retained",
-  "prefix_rows": "263214",
+  "prefix_rows": "274367",
   "prefix_top": "12",
-  "schema": "1",
-  "sha256": "b74795825a621f06016efa1c959fa43eca2d7cf2431000c2dd379187cc327ee2",
+  "schema": "2",
+  "sha256": "186fb1578630fec60ffbf58213db07d543fc11517ed4ebc5ca0cdb47ddc70dfb",
   "size": "60",
-  "sources": "{\"ejdict\": [\"kujirahand/EJDict\", \"2dd9e71ffcefce89b4d946ce07bf51fa0573aac0\"], \"scowl\": [\"engramtech/scowl\", \"3373b9f12dce7016c9df2713ef733131e9022bc1\"]}",
-  "word_count": "113438"
+  "sources": "{\"cspell\": [\"streetsidesoftware/cspell-dicts\", \"db01cf70052ad247fa7d8ea94a9d8e87af6e358a\"], \"ejdict\": [\"kujirahand/EJDict\", \"2dd9e71ffcefce89b4d946ce07bf51fa0573aac0\"], \"scowl\": [\"engramtech/scowl\", \"3373b9f12dce7016c9df2713ef733131e9022bc1\"]}",
+  "word_count": "116945"
 }

@@ -50,6 +50,7 @@ if (Test-Path (Join-Path $root 'tests/uia.ahk')) { Invoke-Ahk (Join-Path $root '
 if (Test-Path (Join-Path $root 'tests/sakura.ahk')) { Invoke-Ahk (Join-Path $root 'tests/sakura.ahk') }
 if (Test-Path (Join-Path $root 'tests/manage.ahk')) { Invoke-Ahk (Join-Path $root 'tests/manage.ahk') }
 if (Test-Path (Join-Path $root 'tests/transfer.ahk')) { Invoke-Ahk (Join-Path $root 'tests/transfer.ahk') }
+if (Test-Path (Join-Path $root 'tests/it-dictionary.ahk')) { Invoke-Ahk (Join-Path $root 'tests/it-dictionary.ahk') }
 if ($Integration) { Invoke-Ahk (Join-Path $root 'tests/integration.ahk') }
 elseif ($CaseOnly) { Invoke-Ahk -Script (Join-Path $root 'tests/integration.ahk') -ExtraArgs @('--case-only') }
 elseif ($LearningOnly) { Invoke-Ahk -Script (Join-Path $root 'tests/integration.ahk') -ExtraArgs @('--learning-only') }

@@ -21,6 +21,10 @@ class EacConfig {
         this.PromotionCount := this.Int("General", "PromotionCount", 2, 2, 100)
         this.SCOWL := this.Int("General", "SCOWL", 1, 0, 1)
         this.EJDict := this.Int("General", "EJDict", 1, 0, 1)
+        this.IT := this.Int("General", "IT", 1, 0, 1)
+        this.ITScoreBoost := this.Int("General", "ITScoreBoost", 1200, -5000, 5000)
+        this.AISupplement := this.Int("General", "AISupplement", 1, 0, 1)
+        this.AIScoreBoost := this.Int("General", "AIScoreBoost", 300, -5000, 5000)
         this.Debug := this.Int("General", "Debug", 0, 0, 1)
         this.CaretMode := this.Read("General", "CaretMode", "Win32")
         if this.CaretMode != "Win32" && this.CaretMode != "Off"

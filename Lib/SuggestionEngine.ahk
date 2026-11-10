@@ -5,7 +5,7 @@ class EacSuggestionEngine {
         this.Config := config
         this.Personal := personal
         this.Db := EacSQLite(path, true)
-        if this.Db.Query("PRAGMA user_version")[1][1] != "1"
+        if this.Db.Query("PRAGMA user_version")[1][1] != "2"
             throw Error("Unsupported dictionary schema; rebuild dictionary")
     }
 
@@ -15,8 +15,9 @@ class EacSuggestionEngine {
             return []
         pool := Map(), blocked := Map()
         ; At most 12 static rows per source; never scan a prefix range of words.
-        for source in [1, 2] {
+        for source in [1, 2, 4, 8] {
             if (source = 1 && !this.Config.SCOWL) || (source = 2 && !this.Config.EJDict)
+                || (source >= 4 && !this.Config.IT) || (source = 8 && !this.Config.AISupplement)
                 continue
             lists := this.Db.Query("SELECT ids FROM prefix_top WHERE prefix=? AND source=?", [prefix, source])
             if !lists.Length
@@ -24,8 +25,28 @@ class EacSuggestionEngine {
             ids := lists[1][1]
             if !RegExMatch(ids, "^\d+(?:,\d+)*$")
                 throw Error("Invalid dictionary index")
-            for row in this.Db.Query("SELECT norm,word,score,translation FROM words WHERE id IN (" ids ")")
-                pool[row[1]] := {Norm: row[1], Word: row[2], Score: Integer(row[3]), Translation: row[4], Learned: false}
+            if source < 4 {
+                rows := this.Db.Query("SELECT norm,word,score,translation FROM words WHERE id IN (" ids ")")
+                boost := 0
+            } else {
+                rows := this.Db.Query("SELECT w.norm,it.word,it.score,it.translation FROM it_entries it "
+                    "JOIN words w ON w.id=it.word_id WHERE it.source=? AND w.id IN (" ids ")", [source])
+                boost := this.Config.ITScoreBoost + (source = 8 ? this.Config.AIScoreBoost : 0)
+            }
+            for row in rows {
+                norm := row[1], score := Integer(row[3]) + boost
+                if !pool.Has(norm)
+                    pool[norm] := {Norm: norm, Word: row[2], Score: score, Translation: row[4], Learned: false}
+                else {
+                    ; A shared word keeps its best enabled score, with IT/AI spelling.
+                    pool[norm].Word := row[2]
+                    pool[norm].Score := Max(pool[norm].Score, score)
+                    if row[4] != ""
+                        pool[norm].Translation := row[4]
+                }
+                if source >= 4 && pool[norm].Translation = ""
+                    pool[norm].Translation := "[IT]"
+            }
         }
         for row in this.Personal.Find(prefix) {
             norm := row[1]

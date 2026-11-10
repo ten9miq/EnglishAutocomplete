@@ -1,5 +1,13 @@
 # 検証記録 — 2026-11-08
 
+## 2026-11-10: CSpell IT追加辞書とAI補助
+
+- CSpell固定コミット`db01cf70052ad247fa7d8ea94a9d8e87af6e358a`の選定8ファイルと原MITライセンスを使用。CSpell3,966語・独自AI補助16語を収録し、重複整理後116,945語・13,102フレーズ。配布DBはversion 2、個人DBはversion 1を維持。
+- Python 3.10.11の`python -m unittest discover -s tests -p 'test_*.py' -v`で14試験PASS。通常113,438語の表記・点数・訳・従来sourceの正規化ハッシュが追加前と一致。追加語の出典/表記、固定ソースSHA256、AIリストのmanifestハッシュ、prefix最大12件、配布DBの再生成バイト一致を確認。
+- AHK v2.0.28 x64の`tools/verify.ps1`で構文4入口、core129・IME69・navigation107・forget29・UIA677・サクラ27・management43・transfer56・IT30を全てexit 0。IT/AIの独立切替、OFF時の通常表記復帰、加点変更、手動登録・禁止との統合、管理画面のIT検索と出典を一時DBで確認。検索P95=2.996ms（1000回、SQLite+個人候補+順位付け）、テストプロセスのWorking Set=22.55MiB。
+- 一時出力で先にIT試験27項目を確認してから、本体PID 61872だけを停止して配布DBを差し替えた。`/restart`でPID 19872へ復帰し、対象CommandLine・単一プロセス・応答・2秒後生存を確認。他の既存AHK10本を同じPIDで維持。個人DB/設定を書き換える移行は行っていない。
+- 実アプリでIT語を入力・選択して語尾を確定する試験と、利用者操作によるINI再読込後の比較は未実施。入力欄・IMEの安全制限は変更していない。
+
 ## 2026-11-10: Excel / VS Codeの実入力
 
 ### 通常プロファイルのVim初回語とExcel直接入力の再検証

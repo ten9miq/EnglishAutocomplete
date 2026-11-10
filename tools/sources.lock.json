@@ -1,4 +1,18 @@
 {
+  "cspell": {
+    "commit": "db01cf70052ad247fa7d8ea94a9d8e87af6e358a",
+    "files": {
+      "LICENSE": "6245ecd81789d113a600fa0e4f5f503e6d1b4f425860f6047dc945560dfcf13c",
+      "coding-terms.txt": "5f9f1a401e83006543d7ea4470591f1bb003d41ed8e43155115f3dc0c3b71598",
+      "computing-acronyms.txt": "5ad1c671d8f9212b6f5c1c169f19f21e480c98b34a763f9f6ed0995ad6d63ff3",
+      "cybersecurity-terms.txt": "1c00c6015c5d7970e763756ecc7cfafc1a50eb98f44f544309bdd3c234cb0b45",
+      "network-os.txt": "75749b9e90aea3ffaaa51535ad4f3d9b96610f68577cc5ef612a388687ceb9c9",
+      "network-protocols.txt": "b2b8f0f0cb21dce4b6c26ed8b044dc99b1ebae5e95e85bfff520265e8874f0eb",
+      "software-services.txt": "4125c5bd54e9435111dcb3d9c4f00b2998f391ea6421aac057287e5d23c6ff1f",
+      "software-terms.txt": "b48e669314a91f6ef4ad3f8797bc51aa0292dd41300bc2082a49316c8cdfa251",
+      "software-tools.txt": "dc9036b00cf72b0881274207e3a9802c4b840c4560c14d43994b919cfaf47aa3"
+    }
+  },
   "ejdict": {
     "sha256": "395e39d14efeb8b2f400a836daa69c1ff91fcaea6b07d866fa0ca8d48901b8e7"
   },
