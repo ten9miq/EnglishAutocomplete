@@ -4,6 +4,8 @@
 
 専用リポジトリ: [ten9miq/EnglishAutocomplete](https://github.com/ten9miq/EnglishAutocomplete)。元のAutoHotkeyリポジトリから分離した独立プロジェクトで、外部のAHKライブラリを要求しない。cloneまたはZIP展開したこのディレクトリだけで利用できる。
 
+**Windows 11で通常利用するために追加で用意する実行環境は、AutoHotkey v2 x64だけです。PythonやSQLiteの追加インストール、辞書の再生成は不要です。** 初めて使う場合は[Windows 11での導入と起動](#windows-11での導入と起動)を参照してください。
+
 ## 現時点でできること
 
 - 既定2文字から初期5件の候補。5番目を選択した瞬間に最大9件へ展開。大小文字を無視した検索、入力済み大文字の保持、訳の表示切替。
@@ -60,16 +62,34 @@ rich fieldのDocumentRangeが実際のcaret端点と整合しない場合は、�
 
 Windows 11の新しいメモ帳の内部コントロールが対応クラスかどうかは環境依存。専用のネイティブEdit試験窓では動作確認済みだが、インストールされているメモ帳アプリ自体は未検証。一般アプリを無条件に保証しない。
 
-## 起動
+## Windows 11での導入と起動
 
-1. このフォルダをユーザーが書込み可能な場所に置く。
-2. AutoHotkey **v2 x64**を用意する。v1では動かない。
-3. `EnglishAutocomplete.ahk` を実行する。初回に `user/settings.ini` と `user/user.db` を作る。
-4. ENGまたは日本語IME OFFの半角英数で、対応欄に`confi`などを入力する。IME ONでは候補を停止する。
+リポジトリには生成済みの配布辞書`data/dictionary.db`が含まれるため、cloneした別のPCでも、そのまま使い始められます。SQLiteの処理にはWindows 11標準の`%WINDIR%\System32\winsqlite3.dll`を使用します。SQLite本体・コマンドラインツール・追加DLLをインストールする必要はありません。
 
-```powershell
-& "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe" '/restart' '.\EnglishAutocomplete.ahk'
-```
+| 用途 | 必要なもの |
+|---|---|
+| 通常の英文補完・辞書管理画面・個人辞書のCSV入出力 | Windows 11とAutoHotkey v2 x64。Python・追加SQLiteは不要 |
+| `git clone`による取得 | Git（取得時だけ必要。ZIP展開で取得する場合は不要） |
+| 配布辞書の再生成 | Python 3.8以降と標準ライブラリ。通常利用や初回起動では不要 |
+
+1. [AutoHotkey公式サイト](https://www.autohotkey.com/)から**AutoHotkey v2 x64**を用意する。v1では動かない。
+2. ユーザーが書込み可能な保存先の親フォルダでPowerShellを開き、次を実行する。Gitを使わない場合はリポジトリのZIPを展開し、そのフォルダを開く。
+
+   ```powershell
+   git clone https://github.com/ten9miq/EnglishAutocomplete.git
+   Set-Location .\EnglishAutocomplete
+   ```
+
+3. **辞書を再生成せずに**本体を起動する。次はユーザー単位の標準インストール先の例。配置先が異なる場合は、実際の`AutoHotkey64.exe`のパスへ置き換える。AHK v2との関連付けが済んでいれば、`EnglishAutocomplete.ahk`のダブルクリックでも起動できる。
+
+   ```powershell
+   $ahk = "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe"
+   & $ahk '.\EnglishAutocomplete.ahk'
+   ```
+
+4. 初回起動時に`user/settings.ini`と`user/user.db`が自動作成される。ENGまたは日本語IME OFFの半角英数で、対応する入力欄に`confi`などを入力し、候補をTabで選択してEnterで確定する。IME ONでは候補を停止する。
+
+`data/`や`Lib/`などのフォルダ構成は保持する。通常利用では、以下の「辞書の再生成」のコマンドを実行する必要はない。
 
 | 既定キー | 動作 |
 |---|---|
@@ -221,7 +241,7 @@ CaretProvider.GetPosition(context)はFound/X/Y/Top/Bottom/Method/Hwnd/Focus/Tick
 
 通常の接頭辞候補では、ベース語が存在し訳のない「単語+'s」を除外する。辞書の語データは保持し、`teacher'`まで入力した場合は`teacher's`を補完できる。`it's`等の短縮形と訳のある語は残す。個人辞書へ明示的に登録・学習した形は個人候補として扱う。
 
-通常利用に再生成は不要。生成時だけPython 3.8+標準ライブラリを使う。
+**通常利用や、cloneした別PCでの使い始めに、Pythonと辞書の再生成は不要。** 収録語・説明データの変更などを配布DBへ反映する場合だけ、Python **3.8以降**の標準ライブラリを使って再生成する。「3.8」は最低対応バージョンを示し、3.8ちょうどのインストールを要求するものではない。
 
 再生成前に本体をトレイから終了し、辞書ファイルを閉じる。生成後に本体を起動する。個人DBは辞書再生成で変更しない。
 
