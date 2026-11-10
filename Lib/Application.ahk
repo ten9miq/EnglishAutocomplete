@@ -24,6 +24,7 @@ class EacApplication {
     EnterReleaseSerial := 0
     EnterArmedSerial := 0
     ReleaseBindings := []
+    MouseBindings := []
     DeleteLatched := false
     DeleteActionArmed := false
     DeleteReleaseSerial := 0
@@ -53,12 +54,8 @@ class EacApplication {
         this.Hook.OnKeyDown := ObjBindMethod(this, "OnKeyDown")
         this.Hook.OnKeyUp := ObjBindMethod(this, "OnKeyUp")
         this.InstallKeys()
-        ; Mouse handlers pass through and invalidate without reading app text.
-        if watchMouse {
-            Hotkey "~*LButton", ObjBindMethod(this, "OnLeftButton")
-            for key in ["~*RButton", "~*MButton", "~*WheelUp", "~*WheelDown"]
-                Hotkey key, ObjBindMethod(this, "Reset")
-        }
+        if watchMouse
+            this.InstallMouse()
         this.Hook.Start()
         SetTimer this.TickCallback, 400
     }
@@ -69,7 +66,7 @@ class EacApplication {
         SetTimer this.TickCallback, 0
         SetTimer this.RefreshCallback, 0
         this.Reset()
-        for group in [this.KeyBindings, this.ReleaseBindings] {
+        for group in [this.KeyBindings, this.ReleaseBindings, this.MouseBindings] {
             for binding in group {
                 if binding.Condition
                     HotIf binding.Condition
@@ -82,6 +79,26 @@ class EacApplication {
         this.EnterLatched := false, this.EnterActionArmed := false, this.Accepting := false
         this.DeleteLatched := false, this.DeleteActionArmed := false
         this.DeleteArmedItem := false
+    }
+
+    CanWatchMouse(*) {
+        ; HotIf must gate activation, not just return early from the handler:
+        ; every unconditional wheel callback counts toward A_MaxHotkeysPerInterval.
+        ; Only cached state is inspected; no focus, IME, SQL, or app-text queries.
+        return this.Visible || this.Tracker.Word != "" || this.Tracker.Blocked
+            || this.Pending.Length || this.ExcelStart
+    }
+
+    InstallMouse() {
+        condition := ObjBindMethod(this, "CanWatchMouse")
+        HotIf condition
+        try {
+            for key in ["~*LButton", "~*RButton", "~*MButton", "~*WheelUp", "~*WheelDown"] {
+                handler := ObjBindMethod(this, key = "~*LButton" ? "OnLeftButton" : "Reset")
+                Hotkey key, handler, "On"
+                this.MouseBindings.Push({Key: key, Condition: condition})
+            }
+        } finally HotIf
     }
 
     OnLeftButton(*) {

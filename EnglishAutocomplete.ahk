@@ -5,6 +5,9 @@
 ; Local Unicode input; no clipboard, server, elevation or startup registration.
 if A_LineFile = A_ScriptFullPath {
 SendMode "Input"
+; Allow legitimate candidate navigation/repeats, retaining a finite flood guard.
+A_HotkeyInterval := 2000
+A_MaxHotkeysPerInterval := 300
 try DllCall("SetThreadDpiAwarenessContext", "Ptr", -4, "Ptr")
 EacStarted := A_TickCount
 try {
