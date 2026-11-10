@@ -26,9 +26,11 @@ ENGの追加は不要。本体はキーボードレイアウトを追加・切�
 
 IME開閉の照会は1回20ms。Excelで単発の応答遅延を実測したため、WindowsのERROR_TIMEOUT（1460）の場合だけ、同じフォーカス・レイアウト・IME窓・所有スレッドを再確認して1回再照会する。過去のIME状態は使わず、再失敗・対象変更・IME ONは停止する。
 
-通常欄で安全判定できるクラスは `Edit`、`RichEdit`、`RichEdit20A/W`、`RichEdit50A/W`、`RichEditD2DPT`。ES_PASSWORD/EM_GETPASSWORDCHAR、読み取り専用、選択範囲、32767文字を超える欄、タイムアウトは拒否する。それ以外のクラスはアプリ名を制限せずUIAで判定する。カスタム入力欄への強制有効化設定はない。Word本文・Googleスプレッドシートのセル編集中にも対応を拡張した。Scintilla、Excel本文・数式バー、VS Code本文、Google Slides等は個別の動作を保証していない。必要な安全情報を公開しない欄では停止する。
+通常欄で安全判定できるクラスは `Edit`、`RichEdit`、`RichEdit20A/W`、`RichEdit50A/W`、`RichEditD2DPT`。ES_PASSWORD/EM_GETPASSWORDCHAR、読み取り専用、選択範囲、32767文字を超える欄、タイムアウトは拒否する。それ以外のクラスはアプリ名を制限せずUIAで判定する。カスタム入力欄への強制有効化設定はない。Word本文・Googleスプレッドシートのセル編集中、Excelのセル編集・数式バーで実入力を確認した。Scintilla、Google Slides等は個別の動作を保証していない。必要な安全情報を公開しない欄では停止する。
 
 Chrome/Brave/Edge、Codex等に加え、他のアプリやUIフレームワークでも同じUIAプロバイダーを使用する。**フォーカス中のEdit・編集可能なComboBox・編集可能なDocumentで、パスワードでないこと、編集可能、単一の空選択、入力欄内の本文近傍、前面ウィンドウの祖先との一致を確認できた欄だけ**が対象。textareaやcontenteditableも同じ情報を公開すれば扱う。通常の読み取りは直前128文字・直後1文字。下記のEOF確認を除きValue全文は読まず、SetValue・クリップボード操作は行わない。同じウィンドウ内の別欄への移動もruntime identityで区別し、確定前に再照会する。読み取り専用のDocument、リスト専用ComboBox、情報が不足する独自Webエディターは停止する。
+
+**Excel** 16.0.19127.20860の空ブックで、空セルへの直接入力、F2編集、ダブルクリック編集、数式バーでの補完を確認した。いずれも `confi` で5候補が表示され、Tabで先頭を選び、Enterで `confidence` を挿入した。そのセルの編集は続き、改行やセル移動は起きなかった。セル編集では数式バーか対象セルの直下にあるフォーカス済みの編集欄を特定する。IME OFF・書込み可能・選択範囲なしを確認できた場合に補完する。Excel標準補完が語尾を選択中の欄は対象外。数式・保護シート・結合セルは実機未検証。
 
 Google検索欄はBrave実機でUIAのComboBox（50003）、編集可能・空選択として公開されることを確認した。以前はEdit（50004）だけを許可していたため停止していた。ComboBoxではValueIsReadOnly=falseを必須とし、選択・左右近傍の範囲がその入力欄内に含まれることも確認する。[MicrosoftのComboBox仕様](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-supportcomboboxcontroltype)のとおり、選択だけのComboBoxは入力欄として扱わない。
 
@@ -209,7 +211,7 @@ AHK構文検証は100msで終了する一時絶対Includeラッパーと`/ErrorS
 
 1. Google/MS-IMEそれぞれで、開いた半角英数・未確定入力・再変換・モード切替の実入力を検証する。標準Edit等のTextEditPattern非対応欄を許可するには、別の信頼できる未確定入力判定が必要。
 2. IPC(B案)で既存インジケーターの座標を共有し、UIA/IA2を重複させずカスタム欄へ広げる。同時に入力欄の安全性とテキスト照合プロバイダーを追加する。
-3. Excel、Scintilla、Chromium/Electronごとの安全な挿入とフィールド識別を実装し、実アプリ別に試験する。
+3. Excelの数式・保護された文書、Scintilla、未検証のChromium/Electron入力欄について、安全な挿入とフィールド識別を実アプリ別に検証する。
 4. 異なるDPI/複数モニター、長時間常駐、複数IME、物理キーボードでの高負荷入力を確認する。
 
 本体は既存IME表示を自動変更せず、無関係なAHKの終了・再起動やスタートアップ登録も行わない。

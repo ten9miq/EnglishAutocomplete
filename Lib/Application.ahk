@@ -14,6 +14,7 @@ class EacApplication {
     Navigating := false
     Expanded := false
     CommitCount := 0
+    ExcelStart := false
     TextRetryAt := 0
     Accepting := false
     AcceptScopeKey := ""
@@ -92,6 +93,7 @@ class EacApplication {
 
     Reset(*) {
         this.InputModifierMask := 0
+        this.ExcelStart := false
         this.ClearSelection()
         this.Visible := false
         this.Gui.Hide()
@@ -135,12 +137,32 @@ class EacApplication {
             this.Reset()
             return
         }
+        this.BindExcelEditor(context)
         this.Visible := false ; invalidate hotkeys immediately, render on timer
         for word in this.Tracker.Feed(text, context.Key) {
             if this.Pending.Length < 8
                 this.Pending.Push({Word: word, ContextKey: context.Key, Tick: A_TickCount, Boundary: true})
         }
+        if this.Tracker.Word == text && RegExMatch(text, "^[A-Za-z]$")
+            && EacUia.ExcelCellContext(context, "EXCEL7")
+            this.ExcelStart := context
         SetTimer this.RefreshCallback, -this.Config.DebounceMs
+    }
+
+    BindExcelEditor(context) {
+        ; Excel delivers the first printable key to EXCEL7, then creates the
+        ; EXCEL6 sibling editor. Carry only that observed letter. The normal
+        ; snapshot still has to prove the entire token, IME, caret and target.
+        source := this.ExcelStart
+        if !source || context.Key = source.Key
+            return
+        this.ExcelStart := false
+        if A_TickCount - source.Tick <= 350 && this.Tracker.ContextKey = source.Key
+            && StrLen(this.Tracker.Word) = 1 && !this.Tracker.Blocked && !this.Target && !this.Pending.Length
+            && source.Hwnd = context.Hwnd && source.Thread = context.Thread
+            && EacUia.ExcelCellContext(source, "EXCEL7") && EacUia.ExcelCellContext(context)
+            && DllCall("GetParent","Ptr",source.Focus,"Ptr") = DllCall("GetParent","Ptr",context.Focus,"Ptr")
+            this.Tracker.ContextKey := context.Key
     }
 
     OnKeyDown(hook, vk, sc) {
@@ -293,6 +315,15 @@ class EacApplication {
             return
         try {
             generation := this.Tracker.Generation
+            if this.ExcelStart {
+                context := this.CurrentContext()
+                if context && context.Key = this.ExcelStart.Key && A_TickCount - this.ExcelStart.Tick <= 350 {
+                    SetTimer this.RefreshCallback, -this.Config.DebounceMs
+                    return
+                }
+                if context
+                    this.BindExcelEditor(context)
+            }
             snapshot := this.Snapshot()
             if generation != this.Tracker.Generation
                 return ; a newer input callback already armed its own refresh

@@ -12,7 +12,7 @@
 | Chrome | UIA Edit/TextPatternと必要な安全情報を取得できるフォーム・textarea・contenteditable。既定有効、学習ON | Chrome156専用フォームで利用者の手入力による候補表示・Tab後数字・Enter確定を確認済み。新設定での学習書込みは未検証。選択/readonly/password/情報不足では停止すること |
 | Brave / Edge | Chrome同様。Google検索等の編集可能ComboBoxも対象 | Brave URL欄は利用者確認済み。Google欄の旧版停止は実機ControlType=50003とEdit限定判定の不一致が原因。修正後は利用者の手入力で候補表示・Tab選択を確認、本体Reason=OK/selected=1と照合。Google欄のEnter/数字確定、Chromeの同欄、Edgeは未検証 |
 | Codexデスクトップ | ChatGPT.exe/Codex.exeを許可。UIAで編集可能なEdit入力欄だけ対象。学習ON | 2026-11-09、9候補の選択→Enterでconfi→confident、送信なしを実画面で確認。その後Space操作は廃止 |
-| Excel | アプリ単位では既定有効。安全情報が不足するセル本文等は停止。個別欄は保証なし | 未検証。通常のTab/Enter/Ctrl+Space、セル移動、既存入力が変化しないこと |
+| Excel | 数式バーまたは行・列から指定した1セルの直下で、一意なフォーカス済みEditを検証 | 2026-11-10、16.0.19127.20860で空セルへの直接入力・F2・ダブルクリック・数式バーの各経路を確認。confi→5候補→Tab青選択→Enterでconfidence。編集維持・改行/セル移動なし。数式・保護シート・結合セルは未検証 |
 | VS Code | アプリ単位では既定有効。UIAの安全条件を通る欄だけ対象、本文や標準補完との併用は保証なし | 未検証。標準補完とのキー競合・古い候補の破棄を確認する。必要ならEnabled=0/Keys=0 |
 | Wordデスクトップ | focused DocumentのTextPattern、空選択、文書/左右近傍のreadonlyと包含を検証 | 2026-11-09、実キーconfi→5候補→Tab青選択→Enterでconfidence確定、余計な改行なしを実画面と期待語の一致で確認。保護文書/複雑な表・脚注等の実入力は未検証 |
 | Googleスプレッドシート（Brave） | セル編集中の編集可能ComboBox。空選択の矩形がない場合は可視入力欄の下端に表示 | 2026-11-09、利用者の実キーで候補表示・Tab→Enter確定・セル編集中を維持したとの回答と、本体Selected=1/CommitCount増加を照合。セル選択だけは対象外。数式・複数セル・他ブラウザーは未検証 |
@@ -116,7 +116,13 @@
 - UIA照会中のIME ON切替、フォーカス変更、入力割込みでは確定を中止すること。変換モードEnterで改行/送信を同時に実行せず、選択前Enterは入力先へ渡すこと。
 - UIAキャレット矩形が物理座標で正しく表示され、異なるDPIのモニター移動でも候補が入力欄近傍に収まること。
 
-UIAの安全条件・COM境界・非Chromiumクラスの入口・native拒否からUIAへ迂回しない条件・Document/field位置/アクセシビリティ用Editを646項目で確認（実アプリのUIA実装とは別の模擬APIと非表示HWND試験）。Chrome専用フォーム、Codex、BraveのGoogle検索欄、Word、BraveのSheets/Docsは、上表と検証記録に記した範囲で実入力を確認済み。
+UIAの安全条件・COM境界・非Chromiumクラスの入口・native拒否からUIAへ迂回しない条件・Document/field位置/アクセシビリティ用Edit・Excelの限定フォーカス解決を677項目で確認（実アプリのUIA実装とは別の模擬APIと非表示HWND試験）。Chrome専用フォーム、Codex、BraveのGoogle検索欄、Word、BraveのSheets/Docs、Excelは、上表と検証記録に記した範囲で実入力を確認済み。
+
+### Excelの確認手順
+
+1. 新しい空ブックだけを使い、IME OFFで`confi`を1キーずつ入力する。Excelでは列内に既存語がないセルを選択して直接入力、F2編集、ダブルクリック編集、数式バーを区別して試す。直接入力では空セルを1回クリックし、編集開始キーを挟まず先頭の `c` から入力する。
+2. 初期5候補・未選択からTabで1番を青選択し、Enterで`confidence`になること。Excelはセル編集中を維持すること。未選択Enterは通常の改行/セル確定へ渡すこと。
+3. Excelのセル選択だけ・複数セル・保護/選択文字ありでは本文を変更しないこと。標準オートコンプリートで語尾が選択された場面も拒否すること。数式や保護シートの実入力は別途検証する。
 
 ### IME照会のタイムアウト
 

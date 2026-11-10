@@ -1,7 +1,9 @@
 #Requires AutoHotkey v2.0+
 
 ; Bounded, read-only UIA access. Never SetValue, Select, focus a control, traverse
-; descendants, read a document's full text, or substitute unsupported properties.
+; arbitrary descendants, read a document's full text, or substitute unsupported
+; properties. For Excel's legacy focus proxy only, inspect the formula bar or
+; one addressed grid cell. Neighboring grid items supply indices only.
 class EacUia {
     static Automation := false
     static Deadline := 0
@@ -27,6 +29,119 @@ class EacUia {
         }
         return this.Automation
     }
+    static ExcelCellContext(context, focusClass := "EXCEL6") {
+        try return WinGetClass("ahk_id " context.Focus) = focusClass
+            && WinGetClass("ahk_id " context.Hwnd) = "XLMAIN"
+            && StrLower(WinGetProcessName("ahk_id " context.Hwnd)) = "excel.exe"
+            && DllCall("GetAncestor", "Ptr", context.Focus, "UInt", 2, "Ptr") = context.Hwnd
+        return false
+    }
+    static ExcelFormulaElement(context) {
+        bar := 0
+        for index, hwnd in WinGetControlsHwnd("ahk_id " context.Hwnd) {
+            this.Check()
+            if index > 256
+                throw Error("Excel native control limit")
+            if WinGetClass("ahk_id " hwnd) != "EXCEL<" || !DllCall("IsWindowVisible", "Ptr", hwnd, "Int")
+                continue
+            if bar || DllCall("GetAncestor", "Ptr", hwnd, "UInt", 2, "Ptr") != context.Hwnd
+                throw Error("Excel formula bar ambiguous")
+            bar := hwnd
+        }
+        return bar ? this.Out(this.Client(), 6, "Ptr", bar) : false
+    }
+    static FocusedElement(context, previous := false) {
+        element := this.Out(this.Client(), 8)
+        if this.Property(element, 30003, 3) != 50033 || !this.ExcelCellContext(context)
+            return element
+        walker := this.Out(this.Client(), 16)
+        if previous && this.Property(parent := this.RawChild(walker, previous, 3), 30003, 3) = 50029 {
+            ; Revisit the proven cell during focus/commit validation. Grid
+            ; hit-testing again can stall while Excel is processing the key.
+            found := this.ExcelFocusedChild(walker, parent)
+            if !found || !this.Same(found, previous)
+                throw Error("Excel cell focus changed")
+        } else {
+            root := this.ExcelFormulaElement(context)
+            if root && (this.Property(root, 30003, 3) != 50004 || this.Property(root, 30022, 11)
+                || !this.Property(root, 30010, 11) || this.Property(root, 30019, 11))
+                throw Error("Excel formula bar unsafe")
+            found := root ? this.ExcelFocusedChild(walker, root) : false
+            if !found
+                found := this.ExcelFocusedChild(walker, this.ExcelEditingCell(context, walker))
+        }
+        if !found
+            throw Error("Excel editable focus unavailable")
+        current := this.Out(this.Client(), 8), native := this.Context()
+        if !this.Same(element, current) || !this.Property(current, 30008, 11)
+            || !native || native.Key != context.Key
+            throw Error("Excel focus changed")
+        return found
+    }
+    static ExcelFocusedChild(walker, root) {
+        child := this.ExcelRawChild(walker, root, 4), found := false
+        Loop 8 {
+            if !child
+                break
+            if this.Property(child, 30008, 11) {
+                if found || this.Property(child, 30003, 3) != 50004
+                    throw Error("Excel editable focus ambiguous")
+                found := child
+            }
+            child := this.ExcelRawChild(walker, child, 6)
+        }
+        if child || (found && !this.Same(this.RawChild(walker, found, 3), root))
+            throw Error("Excel raw child limit or parent changed")
+        return found
+    }
+    static ExcelRawChild(walker, element, slot) {
+        try return this.RawChild(walker, element, slot)
+        catch as error {
+            if error.Message = "UIA interface unavailable" && this.LastHresult = 0
+                return false
+            throw error
+        }
+    }
+    static ExcelGridNeighbor(context, walker, points, property) {
+        for point in points {
+            this.Check()
+            packed := (point[2] << 32) | (point[1] & 0xffffffff)
+            hwnd := DllCall("WindowFromPoint", "Int64", packed, "Ptr")
+            if !hwnd || DllCall("GetAncestor", "Ptr", hwnd, "UInt", 2, "Ptr") != context.Hwnd
+                || WinGetClass("ahk_id " hwnd) != "EXCEL7"
+                continue
+            item := this.Out(this.Client(), 7, "Int64", packed)
+            if this.Property(item, 30003, 3) != 50029
+                continue
+            grid := this.RawChild(walker, item, 3)
+            if this.Property(grid, 30003, 3) = 50028
+                return {Grid: grid, Index: this.Property(item, property, 3), Sheet: hwnd}
+        }
+        throw Error("Excel grid coordinate unavailable")
+    }
+    static ExcelEditingCell(context, walker) {
+        previous := EacDpi.Enter()
+        try WinGetPos &x, &y, &width, &height, "ahk_id " context.Focus
+        finally EacDpi.Restore(previous)
+        if width < 6 || height < 6
+            throw Error("Excel edit rectangle unavailable")
+        ; EXCEL6 covers the actual editor. Sample the same row horizontally
+        ; and column vertically outside it. Grid.GetItem addresses one cell
+        ; even on large sheets, scrolled grids and non-default cell sizes.
+        row := this.ExcelGridNeighbor(context, walker, [[x+width+2,y+4],[x-3,y+4]], 30064)
+        col := this.ExcelGridNeighbor(context, walker, [[x+4,y+height+2],[x+4,y-3]], 30065)
+        return this.ExcelCellAt(walker, row, col)
+    }
+    static ExcelCellAt(walker, row, col) {
+        if row.Index < 0 || col.Index < 0 || row.Sheet != col.Sheet || !this.Same(row.Grid, col.Grid)
+            throw Error("Excel grid mismatch")
+        pattern := this.Pattern(row.Grid, 10006, "{414C3CDC-856B-4F5B-8538-3131C6302550}")
+        cell := this.Out(pattern, 3, "Int", row.Index, "Int", col.Index)
+        if this.Property(cell, 30003, 3) != 50029 || !this.Same(this.RawChild(walker, cell, 3), row.Grid)
+            throw Error("Excel cell outside grid")
+        return cell
+    }
+    static RawChild(walker, element, slot) => this.Out(walker, slot, "Ptr", ComObjValue(element))
     static Out(object, slot, args*) {
         this.Check()
         pointer := 0, params := [slot, object]
@@ -436,7 +551,7 @@ class EacUiaFieldProvider {
             this.Stage := 1
             client := api.Client()
             this.Stage := 2
-            element := api.Out(client, 8)
+            element := api.FocusedElement(context)
             type := this.LastControlType := api.Property(element, 30003, 3)
             ; Document is also used by rich text editors. Its type alone does
             ; not prove editability: require writable Text ranges below. A page
@@ -552,7 +667,7 @@ class EacUiaFieldProvider {
             ; Focus is the final remote check: earlier range/text calls may pump
             ; browser events and move DOM focus without changing the Win32 HWND.
             this.Stage := 12
-            current := api.Out(client, 8)
+            current := api.FocusedElement(context, element)
             if !api.Same(element, current) || !api.Property(element, 30008, 11)
                 || api.Property(element, 30003, 3) != type
                 || (type = 50003 && api.Property(element, 30046, 11))
@@ -571,6 +686,12 @@ class EacUiaFieldProvider {
                 EofLength: eofValue ? StrLen(eofValue.Text) : -1}
         } catch as error {
             if error.Message = "UIA deadline" || EacUia.LastHresult = -2146233083
+                return EacFieldGuard.Reject("TextChanged")
+            ; While a cell is entering edit mode Excel can briefly return
+            ; VT_UNKNOWN for IsReadOnly. Permit the existing bounded preview
+            ; retry, never a read or commit using the unknown attribute.
+            if error.Message = "UIA editability unsupported" && api.LastHresult = 0
+                && api.LastVariantType = 13 && api.ExcelCellContext(context)
                 return EacFieldGuard.Reject("TextChanged")
             return EacFieldGuard.Reject("UIAUnavailable")
         } finally {
@@ -597,7 +718,7 @@ class EacUiaFieldProvider {
         try {
             api.Begin()
             this.FocusStage := 1
-            current := api.Out(api.Client(), 8)
+            current := api.FocusedElement(context, field.Element)
             this.FocusStage := 2
             type := api.Property(current, 30003, 3)
             if (type != 50004 && type != 50003 && type != 50030)

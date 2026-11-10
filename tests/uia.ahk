@@ -12,6 +12,7 @@ try {
     TestStructuralRead()
     TestComboRead()
     TestDocumentRead()
+    TestExcelFocus()
     TestActiveCaret()
     TestFieldAnchor()
     TestAccessibilityProxy()
@@ -288,6 +289,62 @@ TestDocumentRead() {
     Assert(field && field.Before == "" && field.After == "" && !api.ValueCalls, "empty writable Document accepted")
 }
 
+TestExcelFocus() {
+    api := ExcelFocusApi
+    api.Reset()
+    Assert(api.FocusedElement(api.Native) = api.Children[1], "Excel legacy Pane resolves one raw focused Edit")
+    Assert(api.FocusCalls = 2 && api.SiblingCalls = 1, "Excel focus rechecked after complete bounded raw child scan")
+    api.Reset(), api.Excel := false
+    Assert(api.FocusedElement(api.Native) = api.Pane && !api.FormulaCalls, "other applications never use Excel proxy resolution")
+    api.Reset(), api.Pane.Type := 50004
+    Assert(api.FocusedElement(api.Native) = api.Pane && !api.FormulaCalls, "normal focused Edit retains ordinary route")
+    for pair in [["Type",50030],["Offscreen",true],["Enabled",false],["Password",true]] {
+        api.Reset(), api.Root.%pair[1]% := pair[2]
+        AssertThrows(() => api.FocusedElement(api.Native), "unsafe formula root " pair[1] " rejected")
+        Assert(!api.SiblingCalls, "unsafe formula root never reads children")
+    }
+    api.Reset(), api.Children := []
+    AssertThrows(() => api.FocusedElement(api.Native), "missing raw editor rejected")
+    api.Reset(), api.Children[1].Focus := false
+    AssertThrows(() => api.FocusedElement(api.Native), "unfocused raw editor rejected")
+    api.Reset(), api.Children[1].Type := 50030
+    AssertThrows(() => api.FocusedElement(api.Native), "focused non-Edit raw child rejected")
+    api.Reset(), api.Children.Push({Id:4,Type:50004,Focus:true})
+    AssertThrows(() => api.FocusedElement(api.Native), "two focused Edit children rejected")
+    api.Reset(), api.ParentChanged := true
+    AssertThrows(() => api.FocusedElement(api.Native), "raw editor reparented during search rejected")
+    api.Reset(), api.FocusChanged := true
+    AssertThrows(() => api.FocusedElement(api.Native), "UIA legacy focus changes during resolution rejected")
+    api.Reset(), api.NativeChanged := true
+    AssertThrows(() => api.FocusedElement(api.Native), "native focus changes during resolution rejected")
+    api.Reset(), api.EndHresult := -2146233083
+    AssertThrows(() => api.FocusedElement(api.Native), "RPC failure is never mistaken for end of siblings")
+    api.Reset()
+    Loop 8
+        api.Children.Push({Id:A_Index+4,Type:50004,Focus:false})
+    AssertThrows(() => api.FocusedElement(api.Native), "more than eight raw children rejected")
+    Assert(api.SiblingCalls = 8, "raw child traversal bounded independently of workbook size")
+    api.Reset(), api.Children[1].Focus := false, api.CellChildren := [{Id:6, Type:50004, Focus:true}]
+    editor := api.FocusedElement(api.Native)
+    Assert(editor = api.CellChildren[1], "unfocused formula child resolves focused editor of addressed cell")
+    Assert(api.FocusedElement(api.Native, editor) = editor && api.CellCalls = 1,
+        "same cell is revalidated without another point lookup")
+    api.CellChildren := [{Id:7, Type:50004, Focus:true}]
+    AssertThrows(() => api.FocusedElement(api.Native, editor), "replacement cell editor invalidates selection")
+    api.Reset(), api.CellChildren := [{Id:6, Type:50004, Focus:true},{Id:7, Type:50004, Focus:true}]
+    AssertThrows(() => api.ExcelFocusedChild(api.Walker, api.Cell), "two focused editors in addressed cell rejected")
+    row := {Index:23, Sheet:42, Grid:api.Grid}, col := {Index:9, Sheet:42, Grid:api.Grid}
+    Assert(api.ExcelCellAt(api.Walker, row, col) = api.Cell && api.Address = "23:9", "single grid lookup uses observed row and column")
+    col.Index := -1
+    AssertThrows(() => api.ExcelCellAt(api.Walker, row, col), "negative grid index rejected")
+    col.Index := 9, col.Sheet := 43
+    AssertThrows(() => api.ExcelCellAt(api.Walker, row, col), "cross-sheet coordinates rejected")
+    col.Sheet := 42, col.Grid := {Id:88}
+    AssertThrows(() => api.ExcelCellAt(api.Walker, row, col), "different UIA grids rejected")
+    col.Grid := api.Grid, api.ParentChanged := true
+    AssertThrows(() => api.ExcelCellAt(api.Walker, row, col), "returned cell must belong to addressed grid")
+}
+
 TestActiveCaret() {
     api := UiaTestApi
     api.Reset(), api.NoAnchor := true, api.ActiveAvailable := true
@@ -543,6 +600,75 @@ TestComHelpers() {
     AssertThrows(() => EacUia.MsaaRectangle(object), "MSAA location HRESULT failure rejected")
     object := false
     Assert(msaaStub.References = 1, "MSAA object reference released")
+}
+
+class ExcelFocusApi extends EacUia {
+    static Reset() {
+        this.Native := {Key:"7:8"}, this.Pane := {Id:1,Type:50033,Focus:true}
+        this.Root := {Id:2,Type:50004,Offscreen:false,Enabled:true,Password:false}
+        this.Children := [{Id:3,Type:50004,Focus:true}]
+        this.Grid := {Id:99,Type:50028}, this.Cell := {Id:5,Type:50029}
+        this.CellCalls := 0, this.CellChildren := []
+        this.Excel := true, this.FormulaCalls := 0, this.FocusCalls := 0, this.SiblingCalls := 0
+        this.FocusChanged := false, this.NativeChanged := false, this.ParentChanged := false
+        this.EndHresult := 0, this.LastHresult := 0, this.ClientValue := {}, this.Walker := {}
+    }
+    static Client() => this.ClientValue
+    static ExcelCellContext(context) => this.Excel
+    static ExcelEditingCell(context,walker) {
+        this.CellCalls += 1
+        return this.Cell
+    }
+    static Pattern(element,id,iid) {
+        if element = this.Grid && id = 10006
+            return this.Grid
+        throw Error("unexpected grid pattern")
+    }
+    static ExcelFormulaElement(context) {
+        this.FormulaCalls += 1
+        return this.Root
+    }
+    static Context() => this.NativeChanged ? {Key:"7:9"} : this.Native
+    static Same(a,b) => a.Id = b.Id
+    static Out(object,slot,args*) {
+        if object = this.Grid && slot = 3 {
+            this.Address := args[2] ":" args[4]
+            return this.Cell
+        }
+        if object = this.ClientValue && slot = 8 {
+            this.FocusCalls += 1
+            return this.FocusChanged && this.FocusCalls > 1 ? {Id:9,Type:50033,Focus:true} : this.Pane
+        }
+        if object = this.ClientValue && slot = 16
+            return this.Walker
+        throw Error("unexpected Excel focus API call")
+    }
+    static Property(element,id,type) {
+        names := Map(30003,"Type",30008,"Focus",30010,"Enabled",30019,"Password",30022,"Offscreen")
+        return element.%names[id]%
+    }
+    static RawChild(walker,element,slot) {
+        if slot = 3 {
+            if this.ParentChanged
+                return {Id:8}
+            if element = this.Cell
+                return this.Grid
+            return element.Id = 3 ? this.Root : this.Cell
+        }
+        children := element = this.Cell || (slot = 6 && element.Id != 3 && this.CellChildren.Length)
+            ? this.CellChildren : this.Children
+        if slot = 4 {
+            if children.Length
+                return children[1]
+        } else if slot = 6 {
+            this.SiblingCalls += 1
+            for index, child in children
+                if child = element && index < children.Length
+                    return children[index+1]
+        }
+        this.LastHresult := this.EndHresult
+        throw Error("UIA interface unavailable")
+    }
 }
 
 class UiaTestApi extends EacUia {
