@@ -1,4 +1,14 @@
-# 改善TODO（2026-11-09）
+# 改善TODO（2026-11-10）
+
+## 追加依頼: Excel / VS Code
+
+- [x] ExcelのEXCEL6旧Paneと、同じ可視EXCEL<直下の実Editを切り分け。最大8直接子・一意なfocused Edit・親/旧Pane/native focus照合で解決し、通常のTextPattern/readonly/選択/IME安全条件を維持。
+- [x] Excelの数式バーとF2セル内編集で、実キーconfi→5候補→Tab青選択→Enterでconfidence、セル編集維持・余計な改行/セル移動なしを確認。
+- [x] IME OFFでも発生する単発ERROR_TIMEOUTを窓取得失敗と区別。期限を広げず、同じ対象を確認した新しい20ms照会を最大1回だけ再実行。二重失敗・IME ON・対象変更は停止する。
+- [x] VS Codeで本文を公開しないauto/offと、標準IntelliSenseの自動選択によるGroup focusを実測。accessibilitySupport=on / suggest.selectionMode=neverの隔離profileで標準候補を残し、5候補→Tab→Enter確定を実入力確認。
+- [x] 通常profile（既存Vim拡張あり）のplaintext/MarkdownだけselectionMode=neverを追加。既存Markdown設定・JavaScript設定・共通設定を保持し、両形式でNORMAL→i直後confi→5候補→Tab青選択→Enterでconfidence、余計な改行なしを実画面・期待語・CommitCountで確認。非本文iの観測を除く補助処理も各1回使われたことを確認。
+- [x] 空セルへの直接入力時、EXCEL7で観測した先頭1字を同じウィンドウ内のEXCEL6へ引き継ぎ、行・列から指定した単一セルの直下で編集欄を検証する。直接入力・F2・ダブルクリックの各経路で、同じセルに `confidence` を確定できた。
+- [ ] Excelの数式/保護シート・複雑なセル、VS Codeの任意の拡張/言語との互換性は追加検証。
 
 ## 追加依頼: Googleドキュメント / スプレッドシート / Word
 

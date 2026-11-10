@@ -1,5 +1,34 @@
 # 検証記録 — 2026-11-08
 
+## 2026-11-10: Excel / VS Codeの実入力
+
+### 通常プロファイルのVim初回語とExcel直接入力の再検証
+
+- 利用者の追加指示に従い、通常VS Codeの`[plaintext]`と既存`[markdown]`へ`editor.suggest.selectionMode=never`だけを追加。既存Markdownの他項目、JavaScript言語ブロック、全言語共通の候補選択設定（未指定）、suggestSelection、承認済みaccessibilitySupport=onを保持した。JSONCの他内容を文字列編集で残し、解析後の全設定がこの2項目以外で一致すること、書込み前の同時変更なし、raw bytesバックアップ・SHA256・readbackを確認。診断証拠は`tests/results/excel-vscode-language-settings-proof.json`。
+- 通常プロファイル・拡張有効・VimのNORMALモードで、専用`firstword.txt`と`firstword.md`の空3行目へ`i,c,o,n,f,i`を個別実キー入力。挿入モードへ入った後にクリック・語境界による追跡リセットは行わず、両方で初期5候補→Tab青1番→Enterで`confidence`、行3/列11・AfterLength=0を確認した。txtは標準IntelliSense候補を同時表示したまま成功。mdは既定Previewを変更せず、その使い捨てファイルだけテキストエディター表示を選択した。
+- 本体CommitCountは0→1→2。実本文と一致する末尾だけへ追跡を戻す処理の数値ReconcileCountも0→1→2で、Vimの非本文`i`を各1回除いて復帰したことを確認した。coreの追加14項目は、この条件と、任意の不一致・大文字小文字の変更・UIA更新の前後ずれ・URL/email/数字境界・単語途中を拒否する条件を検証する。証拠は`resume-txt-firstword-*`、`resume-md-firstword-*`。
+- 試験開始時と終了時はいずれも補完本体が停止していた。試験用に起動した本体だけを停止し、他のAHK 10本が同じPIDで残ったことを確認した。証拠は `tests/results/astra-excel-final-runtime.json`。
+- **Excelの「セル上」を新たに再現**：空のBook1/A1をクリックしてF2を使わず`c`を入力すると実文字は入るが補完は停止した。native focusはEXCEL6、UIA GetFocusedElementはPane=50033。一方の実focused Edit=50004の親はDataItem=50029→DataGrid=50028→Pane×2→Custom=50025/native EXCEL7→Pane/native XLDESK→XLMAIN。数式バー直下Editはfocus=falseで、以前のF2用経路では到達できなかった。初回入力時にUnknownIME timeoutとTracker=0も記録したが、停止原因をIMEだけに帰属させない。
+- 調査時にはGrid親のSelectionPatternは0件、SelectionPattern2の現在セルはnull、MSAAのaccFocus照会は診断用8秒の上限で終了した。本体では編集矩形の外側から取得した行・列でGrid.GetItemを1度呼び、対象セル直下のフォーカス済みEditを特定した。本体のRPC 50ms、UIA操作200ms、IME照会20msの期限を維持した。
+- D4の先頭 `c` はキー押下とOnCharの両方がEXCEL7で届き、250ms後にはEXCEL6へ移っていた。引継ぎ修正後、空のF6への直接入力、G7のF2編集、I9のダブルクリック編集で `confi` →5候補→Tabで先頭を青選択→Enterで `confidence` を確認した。どれもセル移動と改行はなく、セルの編集が続いた。F6・I9では確定後の独立読み取りでも `Before == "confidence"` と空の `After`、UIACaretを確認した。証拠は `excel-first-key-d4.txt`、`astra-f6-enter-*`、`astra-i9-enter-*`。
+
+- I9の独立診断では、実Editはフォーカスあり、親はDataItem（50029）。TextPatternの文書範囲と選択範囲は両方とも同じEditに属し、書込み可能。選択は文書内の1点に畳まれていた。証拠は `astra-cell-ownership.txt`。
+
+既存の文書・コードを編集せず、Excelの新しいBook1とVS CodeのGit対象外テキストを使い、computer-useの個別実キーで確認した。貼付やDOM操作による代用ではない。
+
+| 対象 | 確認した原因 | 実測結果と対応 |
+|---|---|---|
+| Excel 16.0.19127.20860 セル内編集 | native focus EXCEL6のUIA Pane=50033はTextPattern非対応。一方、同じXLMAIN内のEXCEL<のRaw直接子はfocused Edit=50004、writable TextPattern・空選択・実語を公開 | 同じウィンドウの一意な可視数式バー直下を最大8要素だけ調べ、実Editの親・旧Pane・native focusを再照合する経路を追加。空の列のD1でconfi→5候補→Tab青選択→Enterでconfidence、D1編集維持・改行/セル移動なし。独立readでExpectedConfidence=1、語長10、AfterLength=0、本体CommitCount=0→1を照合 |
+| Excel 数式バー | focused Editの安全情報を従来経路で取得可能 | 空ブックのA1でconfi→5候補→Tab青選択→Enterでconfidence、同じセルの編集状態を維持。実語・語長10・AfterLength=0を独立readで確認 |
+| Excel IME OFFのキー判定 | default IME窓は存在し、focus/rootで同じHWND・同じExcel UI thread。IMC_GETOPENSTATUSがERROR_TIMEOUT=1460を返し候補選択/確定を安全停止した | 独立診断では20ms照会5/5成功、50msでも1/5回が63msでtimeout、100msは5/5成功。成功時Open=0。期限延長は採用せず、同じcontext/layout/IME HWND/threadを再確認して20msの新しい照会を1回だけ再実行する修正後、上記セル内Tab→Enterが成功。二重失敗・対象変更・IME ONは拒否 |
+| VS Code 1.143.1 既定auto/通常off | autoでは画面にconfiがあってもUIA BeforeLength=0。通常設定にはaccessibilitySupport=offが明示されていた | 隔離profileだけonにするとBeforeLength=5・ExpectedConfi=1となり、空の専用本文で5候補→Tab青選択→Enterでconfidence、行1/列11・余計な改行なし。利用者の明示承認後、通常設定のoffだけをonへ置換。元JSONCのraw bytesをGit対象外へ保存し、単一値以外の一致・書込み前後SHA256・readbackを確認 |
+| VS Code 標準IntelliSense | 自動選択中の候補行がGroup=50026、focus=true / focusable=falseとして返り、本文のEditと異なるため停止。拡張無効の隔離profileでも再現 | selectionMode=neverで標準候補を未選択表示にするとfocused Edit=50004を維持。設定反映後の新しい語で標準候補と英文5候補を同時表示し、Tab青選択→Enterでconfidence、行1維持・AfterLength=0・CommitCount=0→1を確認 |
+
+セルだけを選択した状態や、Excel標準オートコンプリートの語尾選択中は補完対象にしない。数式・保護されたシート・複雑なセル・任意の拡張機能や言語での全操作は未検証。VS Codeの必要設定と標準補完への影響は[公式アクセシビリティ説明](https://code.visualstudio.com/docs/configure/accessibility/accessibility)、[候補選択設定](https://code.visualstudio.com/updates/v1_75#_suggest-selection-mode)を参照。
+
+- AHK v2.0.28 x64で`tools/verify.ps1`を実行。絶対Include一時ラッパーによる構文4入口と、core129 / IME69 / navigation107 / forget29 / UIA677 / サクラ27 = 1038 checksがexit 0。一時ラッパー削除も確認。UIA追加31項目は他アプリ/通常Editの非迂回、unsafe root、raw子の一意性/上限、親・UIA/native focus変化、RPC失敗、同一シート・グリッドの単一セル取得、セル直下の一意性と編集欄の入替拒否を検証。IME追加13項目は単発timeoutのみ再照会、IME ON・対象変化・非timeout・二重失敗の拒否を検証する。
+- Git対象外の証拠は`tests/results/excel-cell-before.txt`、`excel-formula-after.txt`、`excel-cell-raw-child.txt`、`excel-ime-query-timings.txt`、`excel-cell-retry-enter-main.txt`、`excel-cell-retry-enter-proof.txt`、`vscode-auto-before.txt`、`vscode-on-before.txt`、`vscode-enter-excel-vscode-probe.txt`、`vscode-isolated-suggest-always-field.txt`、`vscode-never-enter-proof.txt`、`excel-vscode-verify.txt`。本文・URL・既存ユーザーファイルの内容は診断ログに出力せず、人工語の期待一致フラグと文字数・数値安全属性で記録した。通常VS Code設定のバックアップは個人データとしてGit対象外に保持する。
+
 ## 2026-11-09: Word / Googleスプレッドシート / Googleドキュメント
 
 3アプリの「候補が出ない」を、利用者の使い捨てテスト文書・セルと本文を記録しない数値診断で調査し、入力欄の能力に基づく共通経路を拡張した。以下は先行節のEdit/ComboBox限定より後の実装。
