@@ -49,6 +49,45 @@ Assert(EacSuggestionEngine.ApplyCase("computer", "COM") == "COMPUTER", "uppercas
 Assert(EacSuggestionEngine.ApplyCase("computer", "com") == "computer", "lowercase stays lowercase")
 Assert(EacSuggestionEngine.ApplyCase("computer", "Com") == "Computer", "titlecase suffix")
 Assert(EacSuggestionEngine.ApplyCase("OpenAI", "Ope") == "OpenAI", "proper case suffix")
+Personal.Observe("MSAN")
+Assert(!HasWord(Engine.Search("MS"), "msan"), "one-use unknown word receives no short-prefix promotion")
+Personal.Observe("MSAN")
+shortRank := WordPosition(Engine.Search("MS"), "msan")
+Assert(shortRank > 0 && shortRank <= Settings.InitialCandidates, "two learned uses surface MSAN among first five for MS")
+Assert(WordPosition(Engine.Search("ms"), "msan") = shortRank, "short-prefix priority is case insensitive")
+Assert(HasWord(Engine.Search("MSA"), "msan") && !HasWord(Engine.Search("MSAN"), "msan"), "specific prefix and exact-word omission are retained")
+Personal.Observe("MSATool"), Personal.Observe("MSATool"), Personal.Observe("MSATool")
+Assert(WordPosition(Engine.Search("MS"), "msatool") < WordPosition(Engine.Search("MS"), "msan"), "frequency still orders learned personal words")
+Personal.Observe("MSManual", true)
+Assert(WordPosition(Engine.Search("MS"), "msmanual") < WordPosition(Engine.Search("MS"), "msan"), "manual registration retains higher priority")
+Personal.Block("MSAN")
+Assert(!HasWord(Engine.Search("MS"), "msan"), "short-prefix priority cannot bypass personal block")
+Personal.Delete("MSAN"), Personal.Observe("MSAN"), Personal.Observe("MSAN")
+Personal.ResetFrequency()
+Assert(!HasWord(Engine.Search("MS"), "msan"), "frequency reset removes automatic short-prefix eligibility")
+Assert(HasWord(Engine.Search("MS"), "msmanual"), "frequency reset preserves manual short-prefix candidate")
+for word in ["MSAN","MSATool","MSManual"]
+    Personal.Delete(word)
+
+Personal.Observe("DASAN")
+Assert(!HasWord(Engine.Search("DA"), "dasan"), "one-use DASAN still does not bypass promotion")
+Personal.Observe("DASAN")
+for prefix in ["DA","DAS","DASA"]
+    Assert(WordPosition(Engine.Search(prefix), "dasan") = 1, "learned DASAN stays first as prefix grows " prefix)
+savedItBoost := Settings.ITScoreBoost, savedAiBoost := Settings.AIScoreBoost
+Settings.ITScoreBoost := 5000, Settings.AIScoreBoost := 5000
+Assert(WordPosition(Engine.Search("DA"), "dasan") = 1, "large static technical boosts cannot hide promoted personal word")
+Settings.ITScoreBoost := savedItBoost, Settings.AIScoreBoost := savedAiBoost
+Personal.Observe("DATool", true)
+Assert(WordPosition(Engine.Search("DA"), "datool") < WordPosition(Engine.Search("DA"), "dasan"), "manual tier stays ahead of automatic learning")
+Personal.Delete("DATool")
+Personal.Observe("DASAN"), Personal.Observe("day")
+Assert(WordPosition(Engine.Search("DA"), "dasan") < WordPosition(Engine.Search("DA"), "day"), "one-use common word cannot use base score to outrank promoted unknown")
+Personal.Observe("day")
+Assert(WordPosition(Engine.Search("DA"), "dasan") < WordPosition(Engine.Search("DA"), "day"), "personal usage wins over static base score within learned tier")
+for word in ["DASAN","day"]
+    Personal.Delete(word)
+
 Personal.Observe("MyInternalTool")
 Assert(!HasWord(Engine.Search("myi"), "myinternaltool"), "unknown once not promoted")
 Personal.Observe("MyInternalTool")
@@ -212,6 +251,13 @@ HasWord(items, norm) {
         if item.Norm == norm
             return true
     return false
+}
+
+WordPosition(items, norm) {
+    for item in items
+        if item.Norm == norm
+            return A_Index
+    return 0
 }
 
 NowMs() {

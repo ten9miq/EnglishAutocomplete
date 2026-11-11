@@ -53,7 +53,8 @@ class EacSuggestionEngine {
             for row in rows {
                 norm := row[1], score := Integer(row[3]) + boost
                 if !pool.Has(norm)
-                    pool[norm] := {Norm: norm, Word: row[2], Score: score, Translation: row[4], Learned: false}
+                    pool[norm] := {Norm: norm, Word: row[2], Score: score, Translation: row[4], Learned: false,
+                        Priority: 0, PersonalScore: 0}
                 else {
                     ; A shared word keeps its best enabled score, with IT/AI spelling.
                     pool[norm].Word := row[2]
@@ -74,28 +75,40 @@ class EacSuggestionEngine {
             if Integer(row[3]) < this.Personal.Promotion && !Integer(row[4]) && !pool.Has(norm)
                 continue
             if !pool.Has(norm)
-                pool[norm] := {Norm: norm, Word: row[2], Score: 0, Translation: "[個人辞書]"}
+                pool[norm] := {Norm: norm, Word: row[2], Score: 0, Translation: "[個人辞書]",
+                    Priority: 0, PersonalScore: 0}
             item := pool[norm]
             item.Learned := Integer(row[3]) > 0 && !Integer(row[4])
             if Integer(row[4])
                 item.Word := row[2]
             age := Max(0, DateDiff(A_NowUTC, "19700101000000", "Seconds") - Integer(row[5]))
-            item.Score += (Integer(row[4]) ? 10000 : 0) + Min(5000, Integer(row[3]) * 100)
+            item.PersonalScore := Min(5000, Integer(row[3]) * 100)
                 + Max(0, 200 - Floor(age / 86400) * 10)
+            item.Score += (Integer(row[4]) ? 10000 : 0) + item.PersonalScore
+            ; Personal priority survives prefix growth and cannot be drowned
+            ; out by a common word's base score or a technical-source boost.
+            item.Priority := Integer(row[4]) ? 2 : (Integer(row[3]) >= this.Personal.Promotion ? 1 : 0)
         }
         result := []
         for norm, item in pool {
             if blocked.Has(norm) || this.Personal.IsBlocked(norm) || norm = prefix || SubStr(norm, 1, StrLen(prefix)) != prefix
                 continue
             position := 1
-            while position <= result.Length && (result[position].Score > item.Score
-                || (result[position].Score = item.Score && StrCompare(result[position].Norm, norm, true) < 0))
+            while position <= result.Length && EacSuggestionEngine.RanksBefore(result[position], item)
                 position += 1
             result.InsertAt(position, item)
         }
         while result.Length > this.Config.MaxCandidates
             result.Pop()
         return result
+    }
+
+    static RanksBefore(a, b) {
+        if a.Priority != b.Priority
+            return a.Priority > b.Priority
+        if a.Priority > 0 && a.PersonalScore != b.PersonalScore
+            return a.PersonalScore > b.PersonalScore
+        return a.Score > b.Score || (a.Score = b.Score && StrCompare(a.Norm, b.Norm, true) < 0)
     }
 
     static SegmentPrefix(prefix) {
