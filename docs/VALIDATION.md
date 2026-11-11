@@ -1,5 +1,19 @@
 # 検証記録 — 2026-11-08
 
+## 2026-11-12: ブラウザー入力直後の選択更新待ち
+
+- 専用Chrome 157のURL欄では、利用者の実キーによる候補表示・確定を変更前に確認。一方、通常BraveのURL欄では候補が出ず、数値診断で入力途中のUIA Stage 6失敗後に追跡文字が欠ける状態を確認した。追加の属性照会では、入力後の欄はEdit・enabled・password=false・空選択・readonly=falseであり、末尾の自動選択が残り続けている状態ではなかった。
+- UIAの単一空選択を取得できない読み取りは引き続き拒否する。その拒否理由を`TextChanged`として既存の350msプレビュー再試行へ渡し、取得に成功するまで候補・確定を禁止する。選択が続く場合は期限切れで追跡を破棄する。型・本文・編集可能性・フォーカス・IMEの検証は省略しない。
+- `tools/verify.ps1 -Ahk <installed v2 x64 AutoHotkey64.exe>`をAHK 2.0.28で実行。絶対Includeラッパー4入口と回帰1288項目（core129、IME69、navigation107、forget29、UIA677、サクラ27、管理43、転送56、IT38、mouse22、continuation91）が終了コード0。追加モデル試験は先頭文字保持、成功後の復帰、期限切れ、readonly、フォーカス変更、再試行中の候補キー非介入を確認。`git diff --check`も通過した。
+- 稼働していた本体PID62900だけを`/restart`し、PID41084の対象CommandLine・単一プロセス・WM_NULL応答・3秒後生存、他のAHK10本のPID維持を確認。利用者の実キー再試験でBrave URL欄に候補が出るようになり、数値ログのVisible=1とも一致した。
+- ChatGPTのチャット入力欄とGitHubのGo to fileは依然候補が出ない。前者の試験区間ではStage 3のウィンドウ祖先不一致、後者ではComboBoxとListItemのフォーカス切替を観測しており、別途調査中。DOM focusだけの検査やモデル試験を実キーの成功扱いにしない。診断ログはGit除外の`tests/results/browser-generic/`に保存する。
+- 続く階層診断で、ChatGPTのEditから同じ前面ウィンドウまで34階層を実測した。祖先の探索上限だけを32から64要素へ変更し、200msと各RPC50msの期限を維持。深さ34/63の一致、上限外64・循環/別ルートの拒否、探索中の期限切れの5モデル試験を追加し、UIA682・全回帰1293項目と構文4入口がPASS。本体だけをPID41084から59512へ再反映し、単一プロセス・応答・3秒後生存・他のAHK10本の維持を確認した。修正後、利用者のChatGPT実入力で候補表示を確認できた。送信を避けるため同欄でのEnter確定は試験していない。
+- GitHubのDOM検査ではGo to fileのinput/comboboxがactiveElementのまま`aria-activedescendant`で候補を参照していた。同じ利用者試験区間のUIAはListItemを返した。ListItemを無条件に入力欄として許可せず、実際の入力先とキャレットを証明する方法を調査中。
+- Go to fileの追加数値診断で、可視・focus HWND所有のMSAAキャレットの点がComboBoxを指し、ValueIsReadOnly=falseであることを確認。専用Chromeの当該ウィンドウだけを読み取る背景診断で、typed CurrentControllerForは1件の候補Dialogを返した（汎用VARIANT getterはNotSupported）。同じ前面ウィンドウへの所属と、この関連先に現在focusのListItemが含まれることを要求して入力先を解決する経路を追加した。本文・空選択・readonly・IMEの検証は省略しない。
+- 反映後、利用者の手入力でGo to fileの候補表示を確認。ただし初回のTab試験は青選択せずフォーカス移動となり、診断値LastTabDecision=6 / FocusStage=2 / MsaaStage=3でキー判定中のキャレット再照会失敗を確認した。この試験は成功扱いにしない。
+- 候補移動は650ms以内の入力先検証を前提に、現在のnative/UIA focus、ComboBoxの編集可否と候補Dialog/ListBoxとのControllerFor関係を再照合し、キー判定内ではMSAAを呼ばない。400ms定期検証とEnter確定は引き続きキャレットを含む完全検証を行う。readonly・期限切れ・無関係な候補・キャレット移動/消失・別ウィンドウ・フォーカス変更・選択範囲などの拒否を追加検証した。最終`tools/verify.ps1`はUIA718を含む回帰1329項目と構文4入口がPASS、`git diff --check`もPASS。
+- 最終本体PID32536について対象CommandLine・単一プロセス・WM_NULL応答・3秒後生存・他のAHK10本のPID維持を確認。最終再試験で利用者がGo to fileの候補表示・Tab青選択・Enter確定に成功した。数値ログでもSelected=1の後、CommitCountが0→1→2と増え、2回の確定と一致した。`github-navigation-cached.tsv`を含む診断はGit除外領域だけに保存し、最後の記録用プロセスは停止フラグで終了した。commit/pushは行っていない。
+
 ## 2026-11-11: 説明128語・JSONL・区切り後補完・Tab再選択
 
 - 説明を64→128語へ拡充し`data/it-descriptions.jsonl`を唯一の正本とした。既存64語の全メタデータを維持。固定CSpell語彙のみを追加対象とし、公式資料で用途を照合した独自MIT短文と確認日を記録。空行/不正JSON/重複キー/必須項目/正規化重複を行番号付きで検証する。JSONLのファイル名・全バイトSHA256・採用件数をmanifestへ記録。Python16試験と再生成バイト一致がPASS。語彙・表記・点数・prefix索引・AI補助は変更前と一致。

@@ -557,7 +557,7 @@ class EacApplication {
 
     CurrentContext() => EacFieldGuard.Context()
 
-    FocusedTarget(field, context) => EacFieldGuard.StillFocused(field, context)
+    FocusedTarget(field, context) => EacFieldGuard.NavigationFocused(field, context)
 
     NavigationTargetValid(binding) {
         generation := this.Tracker.Generation

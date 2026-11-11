@@ -50,9 +50,19 @@ class EacUia {
         }
         return bar ? this.Out(this.Client(), 6, "Ptr", bar) : false
     }
-    static FocusedElement(context, previous := false) {
+    static FocusedElement(context, previous := false, &virtualFocus := false) {
+        virtualFocus := false
         element := this.Out(this.Client(), 8)
-        if this.Property(element, 30003, 3) != 50033 || !this.ExcelCellContext(context)
+        type := this.Property(element, 30003, 3)
+        if type = 50007 {
+            input := this.CaretControlledInput(context, element)
+            if input {
+                virtualFocus := element
+                return input
+            }
+            return element
+        }
+        if type != 50033 || !this.ExcelCellContext(context)
             return element
         walker := this.Out(this.Client(), 16)
         if previous && this.Property(parent := this.RawChild(walker, previous, 3), 30003, 3) = 50029 {
@@ -77,6 +87,76 @@ class EacUia {
             || !native || native.Key != context.Key
             throw Error("Excel focus changed")
         return found
+    }
+    static ControllerPeers(element) {
+        ; Use the typed getter: some providers return the reserved unsupported
+        ; value through GetCurrentPropertyValueEx for the same relation.
+        peers := this.Out(element, 48)
+        hr := ComCall(3, peers, "Int*", &count := 0, "Int")
+        this.Check()
+        if hr != 0 || count < 1 || count > 8
+            throw Error("UIA controller relation unavailable")
+        result := []
+        Loop count
+            result.Push(this.Out(peers, 4, "Int", A_Index - 1))
+        return result
+    }
+    static CaretElement(context, caret) {
+        packed := (Round((caret.Top + caret.Bottom) / 2) << 32) | (caret.X & 0xffffffff)
+        hwnd := DllCall("WindowFromPoint", "Int64", packed, "Ptr")
+        if !hwnd || DllCall("GetAncestor", "Ptr", hwnd, "UInt", 2, "Ptr") != context.Hwnd
+            throw Error("UIA caret window mismatch")
+        return this.Out(this.Client(), 7, "Int64", packed)
+    }
+    static CaretControlledInput(context, focused) {
+        ; ARIA active-descendant can expose a suggestion ListItem as UIA focus
+        ; while typing still goes to its controlling ComboBox. Never treat the
+        ; ListItem itself as editable or search unrelated inputs/page content.
+        if !this.Property(focused, 30008, 11) || !this.Property(focused, 30010, 11)
+            || this.Property(focused, 30019, 11) || this.Property(focused, 30022, 11)
+            return false
+        caret := this.MsaaAnchor(context)
+        if !caret
+            return false
+        candidate := this.CaretElement(context, caret)
+        walker := this.Out(this.Client(), 16)
+        Loop 8 {
+            type := this.Property(candidate, 30003, 3)
+            if type = 50003 {
+                if !this.Property(candidate, 30009, 11) || !this.Property(candidate, 30010, 11)
+                    || this.Property(candidate, 30019, 11) || this.Property(candidate, 30022, 11)
+                    || this.Property(candidate, 30046, 11) || !this.AncestorMatches(candidate, context)
+                    return false
+                rect := this.ElementRectangle(candidate)
+                if rect.Length != 4 || !(rect[3] > 0 && rect[4] > 0
+                    && caret.X >= rect[1] && caret.X < rect[1] + rect[3]
+                    && caret.Top >= rect[2] && caret.Bottom <= rect[2] + rect[4])
+                    return false
+                related := false
+                for peer in this.ControllerPeers(candidate) {
+                    peerType := this.Property(peer, 30003, 3)
+                    if (peerType = 50008 || peerType = 50032) && this.ElementWithin(focused, peer)
+                        && this.AncestorMatches(peer, context) {
+                        related := true
+                        break
+                    }
+                }
+                if !related
+                    return false
+                current := this.Out(this.Client(), 8), native := this.Context()
+                finalCaret := this.MsaaAnchor(context)
+                if !this.Same(current, focused) || !this.Property(current, 30008, 11)
+                    || !native || native.Key != context.Key || !finalCaret
+                    || finalCaret.X != caret.X || finalCaret.Top != caret.Top || finalCaret.Bottom != caret.Bottom
+                    || !this.ElementWithin(this.CaretElement(context, finalCaret), candidate)
+                    return false
+                return candidate
+            }
+            if type = 50030
+                return false
+            candidate := this.RawChild(walker, candidate, 3)
+        }
+        return false
     }
     static ExcelFocusedChild(walker, root) {
         child := this.ExcelRawChild(walker, root, 4), found := false
@@ -267,7 +347,9 @@ class EacUia {
         root := this.Out(this.Client(), 6, "Ptr", context.Hwnd)
         walker := this.Out(this.Client(), 16)
         current := element
-        Loop 32 {
+        ; Deeply nested web editors can exceed 32 raw ancestors. Keep both a
+        ; finite traversal and the existing 200ms/COM-call deadlines.
+        Loop 64 {
             if this.Same(current, root)
                 return true
             current := this.Out(walker, 3, "Ptr", ComObjValue(current))
@@ -551,14 +633,14 @@ class EacUiaFieldProvider {
             this.Stage := 1
             client := api.Client()
             this.Stage := 2
-            element := api.FocusedElement(context)
+            element := api.FocusedElement(context, false, &virtualFocus)
             type := this.LastControlType := api.Property(element, 30003, 3)
             ; Document is also used by rich text editors. Its type alone does
             ; not prove editability: require writable Text ranges below. A page
             ; viewer remains rejected even if it contains editable descendants.
             isDocument := type = 50030
             if (type != 50004 && type != 50003 && !isDocument)
-                || !api.Property(element, 30008, 11) || !api.Property(element, 30009, 11)
+                || (!api.Property(element, 30008, 11) && !virtualFocus) || !api.Property(element, 30009, 11)
                 || !api.Property(element, 30010, 11) || api.Property(element, 30019, 11)
                 return EacFieldGuard.Reject("UIAUnsafeField")
             offscreen := api.Property(element, 30022, 11)
@@ -667,8 +749,8 @@ class EacUiaFieldProvider {
             ; Focus is the final remote check: earlier range/text calls may pump
             ; browser events and move DOM focus without changing the Win32 HWND.
             this.Stage := 12
-            current := api.FocusedElement(context, element)
-            if !api.Same(element, current) || !api.Property(element, 30008, 11)
+            current := api.FocusedElement(context, element, &verifiedVirtualFocus)
+            if !api.Same(element, current) || (!api.Property(element, 30008, 11) && !verifiedVirtualFocus)
                 || api.Property(element, 30003, 3) != type
                 || (type = 50003 && api.Property(element, 30046, 11))
                 || api.Property(element, 30022, 11) != offscreen
@@ -683,9 +765,17 @@ class EacUiaFieldProvider {
             return {Before: before, After: after, Position: identity, Identity: identity,
                 Selection: selection, Element: element, Anchor: anchor, Context: context, Provider: "UIA",
                 AccessibilityProxy: offscreen,
+                VirtualFocusCandidate: type = 50003, FocusVerifiedAt: A_TickCount,
                 EofLength: eofValue ? StrLen(eofValue.Text) : -1}
         } catch as error {
             if error.Message = "UIA deadline" || EacUia.LastHresult = -2146233083
+                return EacFieldGuard.Reject("TextChanged")
+            ; Chromium can publish the old selection briefly after replacing
+            ; it with a typed character. Reject the snapshot, but let preview
+            ; use its existing bounded retry instead of losing that character.
+            ; A persistent selection still expires; commit never retries it.
+            if error.Message = "UIA selected text" || error.Message = "UIA ambiguous selection"
+                || error.Message = "UIA selection unavailable"
                 return EacFieldGuard.Reject("TextChanged")
             ; While a cell is entering edit mode Excel can briefly return
             ; VT_UNKNOWN for IsReadOnly. Permit the existing bounded preview
@@ -713,24 +803,66 @@ class EacUiaFieldProvider {
             api.Deadline := 0
         }
     }
+    static NavigationFocused(field, context) {
+        if !field.HasOwnProp("VirtualFocusCandidate") || !field.VirtualFocusCandidate
+            return this.IsFocused(field, context)
+        ; Navigation inserts no characters. Reuse only the recent owned-caret
+        ; proof maintained by the 400ms idle check (200ms maximum UIA lease),
+        ; and recheck exact current focus + critical input properties now.
+        ; MSAA inside HotIf can fail while Windows is waiting for the key hook.
+        if context.Key != field.Context.Key || A_TickCount - field.FocusVerifiedAt > 650
+            return false
+        api := this.Api
+        try {
+            api.Begin()
+            current := api.Out(api.Client(), 8)
+            if !api.Property(current, 30008, 11) || !api.Property(current, 30010, 11)
+                || api.Property(current, 30019, 11) || api.Property(current, 30022, 11)
+                || api.Property(field.Element, 30003, 3) != 50003
+                || !api.Property(field.Element, 30009, 11) || !api.Property(field.Element, 30010, 11)
+                || api.Property(field.Element, 30019, 11) || api.Property(field.Element, 30022, 11)
+                || api.Property(field.Element, 30046, 11)
+                return false
+            if !api.Same(current, field.Element) {
+                if api.Property(current, 30003, 3) != 50007
+                    return false
+                related := false
+                for peer in api.ControllerPeers(field.Element) {
+                    type := api.Property(peer, 30003, 3)
+                    if (type = 50008 || type = 50032) && api.ElementWithin(current, peer)
+                        && api.AncestorMatches(peer, context) {
+                        related := true
+                        break
+                    }
+                }
+                if !related
+                    return false
+            }
+            native := api.Context()
+            verified := api.Out(api.Client(), 8)
+            return native && native.Key = context.Key && api.Same(verified, current)
+        } catch {
+            return false
+        } finally api.Deadline := 0
+    }
     static IsFocused(field, context) {
         api := this.Api
         try {
             api.Begin()
             this.FocusStage := 1
-            current := api.FocusedElement(context, field.Element)
+            current := api.FocusedElement(context, field.Element, &virtualFocus)
             this.FocusStage := 2
             type := api.Property(current, 30003, 3)
             if (type != 50004 && type != 50003 && type != 50030)
                 || (type = 50003 && api.Property(current, 30046, 11))
-                || !api.Same(field.Element, current) || !api.Property(current, 30008, 11)
+                || !api.Same(field.Element, current) || (!api.Property(current, 30008, 11) && !virtualFocus)
                 || api.Property(current, 30019, 11) || !api.Property(current, 30010, 11)
                 return false
             this.FocusStage := 3
-            ; Navigation/idle checks only maintain target identity. They never
-            ; insert text. Re-querying the transient MSAA caret here can let a
-            ; native Tab through while the accessibility caret is refreshing.
-            ; Read()/Commit still require fresh visible system-caret proof.
+            ; Ordinary navigation/idle checks maintain target identity without
+            ; repeating the offscreen editor's MSAA anchor. Virtual ListItem
+            ; focus is different: FocusedElement must reprove its owned caret
+            ; and controller relation when renewing that proof. Never insert here.
             if api.Property(current, 30022, 11) && (type != 50004 || !field.HasOwnProp("AccessibilityProxy")
                 || !field.AccessibilityProxy || api.Property(current, 30046, 11))
                 return false
@@ -739,6 +871,8 @@ class EacUiaFieldProvider {
             if !native || native.Key != context.Key
                 return false
             this.FocusStage := 5
+            field.VirtualFocusCandidate := type = 50003
+            field.FocusVerifiedAt := A_TickCount
             return true
         } catch {
             return false

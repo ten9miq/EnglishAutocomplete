@@ -25,6 +25,12 @@ Googleドキュメントのスクリーンリーダー/点字ON環境では、UI
 
 ## 判断
 
+### 2026-11-12: 深いWeb階層と仮想フォーカス
+
+前面ウィンドウの祖先照合は最大64要素とし、全体200ms・RPC各50msの期限を維持する。ChatGPTの実入力欄で34階層を実測し、旧32要素の打切りを解消した。選択一覧が更新途中の読み取りは拒否し、既存の350msプレビュー再試行を使う。確定処理は失敗した読み取りを使用しない。
+
+ARIA active-descendantでUIA focusがListItemを指す場合、同じnative focus所有の可視・非保護MSAAキャレットを取得し、その点のUIA要素から最大8要素の祖先だけを調べる。編集可能・可視・非password・focusableなComboBoxを一つ見つけ、その矩形内にキャレットがあること、同じ前面ウィンドウへ所属すること、typed CurrentControllerFor getterの最大8関連先のListBox/候補Dialogに現在focusの項目が含まれることを要求する。VARIANT版getterがNotSupportedを返す実装でも、typed getter自体のHRESULTと実配列長を検証する。本文は通常のReadで入力欄内の局所範囲だけを読み、空選択・readonly・本文の再一致を維持する。解決の最後、表示Snapshotの最後、定期検証と確定前にもnative/UIA focusと所有キャレット・関連を照合する。Tab等の候補移動だけは650ms以内の入力先検証を前提に、現在のnative/UIA focus・編集可否・ControllerFor関係を軽く再照合し、MSAAをHotIf内で呼ばない。400ms定期照会と最大200msのUIA期限を考慮した期限であり、期限切れ・入力世代変更・native focus変更・マウス操作では利用しない。確定・学習・本文取得にこの期限付き検証を流用しない。ListItemを編集可能として扱わず、ページ本文や無関係な入力欄を探索しない。
+
 ### 2026-11-11: 区切り後の補完と更新待ちの選択
 
 検索はまず観測した語全体を使い、候補がないときだけ安全な複合語の最後の`-`/`.`/`_`以降を検索する。候補には観測した全prefixと後半prefixを保持し、確定時に元のprefixと一致することを確認して語尾だけを挿入する。FieldGuardの検証対象は全prefixのままで、メール/URL/パスや途中位置の検証を緩和しない。検索のフォールバックで辞書の語彙・点数・索引を変更しない。
@@ -106,7 +112,7 @@ UIA/TSF/IA2や新しいフィールドプロバイダーの追加、既存表示
 
 ## Chromium/ElectronのUIA入力プロバイダー
 
-`Chrome_WidgetWin_*`/`Chrome_RenderWidgetHostHWND`に対し、現在focusedなUIA要素を取得する。ControlType=Edit、HasKeyboardFocus/Focusable/Enabled=true、Password/Offscreen=falseを厳格なVARIANT型付きで要求する。NotSupportedやMixedをfalseへ変換しない。RawViewWalkerで祖先だけを上限32段・全体200msまで辿り、Win32前面HWNDの要素に一致することを確認する。RPCの接続・取引タイムアウトは各50ms。[Microsoft property仕様](https://learn.microsoft.com/en-us/windows/win32/api/uiautomationclient/nf-uiautomationclient-iuiautomationelement-getcurrentpropertyvalueex)
+`Chrome_WidgetWin_*`/`Chrome_RenderWidgetHostHWND`に対し、現在focusedなUIA要素を取得する。ControlType=Edit、HasKeyboardFocus/Focusable/Enabled=true、Password/Offscreen=falseを厳格なVARIANT型付きで要求する。NotSupportedやMixedをfalseへ変換しない。RawViewWalkerで祖先だけを上限64要素・全体200msまで辿り、Win32前面HWNDの要素に一致することを確認する。RPCの接続・取引タイムアウトは各50ms。[Microsoft property仕様](https://learn.microsoft.com/en-us/windows/win32/api/uiautomationclient/nf-uiautomationclient-iuiautomationelement-getcurrentpropertyvalueex)
 
 TextPatternの単一collapsed選択を使用し、選択と左右の近傍がその入力欄のDocumentRange内であること、IsReadOnly属性40015がBOOL=falseであることを確認する。左128文字・右1文字を別rangeにし、GetTextの129/2文字制限で切詰めを検出する。Characterが別unitへ繰上がって長過ぎる場合は停止する。[範囲移動仕様](https://learn.microsoft.com/en-us/windows/win32/api/uiautomationclient/nf-uiautomationclient-iuiautomationtextrange-moveendpointbyunit)
 

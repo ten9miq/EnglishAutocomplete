@@ -85,6 +85,7 @@ class EacFieldGuard {
             ? EacUiaFieldProvider.SamePosition(a, b) : a.Position = b.Position
     }
     static StillFocused(field, context) => !field.HasOwnProp("Identity") || EacUiaFieldProvider.IsFocused(field, context)
+    static NavigationFocused(field, context) => !field.HasOwnProp("Identity") || EacUiaFieldProvider.NavigationFocused(field, context)
 
     static ObservedSuffix(field, observed) {
         ; Modal editors may consume a printable command (Vim's i, for example)

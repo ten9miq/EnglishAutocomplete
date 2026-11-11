@@ -19,6 +19,9 @@ try {
     TestMsaaAnchor()
     TestDispatch()
     TestComHelpers()
+    TestAncestorDepth()
+    TestVirtualFocus()
+    TestControllerPeers()
     FileAppend "PASS uia_checks=" Checks " AHK=" A_AhkVersion "`n", "*"
 } finally {
     EacUiaFieldProvider.Api := EacUia
@@ -27,6 +30,181 @@ try {
     UiaTestApi.Array := false
 }
 ExitApp 0
+
+TestAncestorDepth() {
+    api := AncestorDepthApi
+    api.Reset(34)
+    Assert(api.AncestorMatches(api.Node, {Hwnd: 1}) && api.Depth = 34, "deep web editor still proves same foreground root")
+    api.Reset(63)
+    Assert(api.AncestorMatches(api.Node, {Hwnd: 1}), "root inside finite ancestor budget accepted")
+    api.Reset(64)
+    Assert(!api.AncestorMatches(api.Node, {Hwnd: 1}) && api.Depth = 64, "root outside ancestor budget rejected")
+    api.Reset(-1)
+    Assert(!api.AncestorMatches(api.Node, {Hwnd: 1}) && api.Depth = 64, "cycle or unrelated root remains bounded")
+    api.Reset(34), api.ExpireAt := 10
+    AssertThrows(() => api.AncestorMatches(api.Node, {Hwnd: 1}), "deep traversal still observes deadline")
+    api.Deadline := 0
+    api.Node := false
+}
+
+class AncestorDepthApi extends EacUia {
+    static Reset(goal) {
+        this.Stub := UiaComStub("values"), this.Node := this.Stub.Object()
+        this.Depth := 0, this.Goal := goal, this.ExpireAt := -1
+        this.ClientValue := {}, this.Walker := {}
+        this.Deadline := 0
+    }
+    static Client() => this.ClientValue
+    static Same(a, b) {
+        this.Check()
+        return this.Depth = this.Goal
+    }
+    static Out(object, slot, args*) {
+        this.Check()
+        if object = this.ClientValue
+            return slot = 16 ? this.Walker : this.Node
+        this.Depth += 1
+        if this.Depth = this.ExpireAt
+            this.Deadline := A_TickCount - 1
+        this.Check()
+        return this.Node
+    }
+}
+
+TestVirtualFocus() {
+    api := VirtualFocusApi
+    EacUiaFieldProvider.Api := api
+    try {
+        api.Reset()
+        field := EacUiaFieldProvider.Read(api.Native)
+        Assert(field && field.Element = api.Element && field.Before == "alpha confi", "virtual list focus resolves only controlling input")
+        Assert(!api.Props[30008] && api.TextLimits = "129,2,129,2,", "false physical input focus needs fresh caret/controller proof")
+        Assert(EacUiaFieldProvider.IsFocused(field, api.Native), "virtual focus navigation repeats proof")
+        calls := api.ProxyCalls
+        Assert(EacUiaFieldProvider.NavigationFocused(field, api.Native) && api.ProxyCalls = calls,
+            "navigation verifies current focus without MSAA in key hook")
+        field.FocusVerifiedAt -= 651
+        Assert(!EacUiaFieldProvider.NavigationFocused(field, api.Native), "expired owned-caret navigation ticket rejected")
+        field.FocusVerifiedAt := A_TickCount
+        api.Props[30046] := true
+        Assert(!EacUiaFieldProvider.NavigationFocused(field, api.Native), "navigation checks current readonly state")
+        api.Props[30046] := false, api.MoveFocus := true
+        Assert(!EacUiaFieldProvider.NavigationFocused(field, api.Native), "navigation requires identical virtual focus item")
+        api.MoveFocus := false
+        api.List.Parent := "unrelated"
+        Assert(!EacUiaFieldProvider.NavigationFocused(field, api.Native), "navigation rechecks current controller relation")
+        api.List.Parent := "popup"
+        api.ProxyAvailable := false
+        Assert(!EacUiaFieldProvider.IsFocused(field, api.Native), "lost owned caret disables candidate keys")
+        for pair in [[30019,true], [30022,true], [30010,false], [30009,false], [30046,true]] {
+            api.Reset(), api.Props[pair[1]] := pair[2]
+            Assert(!EacUiaFieldProvider.Read(api.Native) && !api.TextCalls && !api.ValueCalls,
+                "unsafe controlling input rejected before text " pair[1])
+        }
+        for failure in ["caret", "relation", "peer_type", "root", "bounds", "caret_moves", "focus_moves", "native_moves", "hit_moves", "walk_limit"] {
+            api.Reset()
+            switch failure {
+                case "caret": api.ProxyAvailable := false
+                case "relation": api.List.Parent := "unrelated"
+                case "peer_type": api.PeerType := 50030
+                case "root": api.Ancestor := false
+                case "bounds": api.FieldRect := [100,100,10,10]
+                case "caret_moves": api.MoveCaret := true
+                case "focus_moves": api.MoveFocus := true
+                case "native_moves": api.CurrentNative := {Hwnd:7,Focus:9,Key:"7:9"}
+                case "hit_moves": api.MoveHit := true
+                case "walk_limit": api.NeverInput := true
+            }
+            Assert(!EacUiaFieldProvider.Read(api.Native) && !api.TextCalls && !api.ValueCalls,
+                "virtual focus refuses missing/changing proof " failure)
+        }
+        api.Reset(), api.SelectionLength := 1
+        Assert(!EacUiaFieldProvider.Read(api.Native) && !api.TextCalls && EacFieldGuard.LastReason = "TextChanged",
+            "virtual focus never bypasses nonempty selection")
+        api.Reset(), api.SelectionReadOnly := true
+        Assert(!EacUiaFieldProvider.Read(api.Native) && !api.TextCalls, "virtual focus never bypasses readonly range")
+        api.Reset(), api.CaretShift := 1
+        Assert(!EacUiaFieldProvider.Read(api.Native), "virtual focus retains text caret revalidation")
+        api.Reset(), api.HitChild := true
+        Assert(EacUiaFieldProvider.Read(api.Native), "caret text child resolves bounded controlling ancestor")
+    } finally EacUiaFieldProvider.Api := UiaTestApi
+}
+
+class VirtualFocusApi extends UiaTestApi {
+    static Reset() {
+        super.Reset()
+        this.Props[30003] := 50003, this.Props[30008] := false
+        this.Popup := {Id:"popup"}, this.List := {Id:"option",Parent:"popup"}
+        this.Child := {Id:"text-child",Parent:this.Element.Id}
+        this.Other := {Id:"other"}, this.Walker := {}
+        this.ProxyAvailable := true, this.FieldRect := [10,20,200,40]
+        this.PeerType := 50032, this.MoveCaret := false, this.MoveFocus := false
+        this.MoveHit := false, this.NeverInput := false, this.HitChild := false, this.HitCalls := 0
+    }
+    static Out(object, slot, args*) {
+        if object = this.ClientValue && slot = 8 {
+            this.FocusCalls += 1
+            return this.MoveFocus && this.FocusCalls > 1 ? this.Other : this.List
+        }
+        if object = this.ClientValue && slot = 16
+            return this.Walker
+        return super.Out(object, slot, args*)
+    }
+    static Property(element, id, type) {
+        if element = this.List || element = this.Other {
+            switch id {
+                case 30003: return 50007
+                case 30008,30010: return true
+                case 30019,30022: return false
+            }
+        }
+        if element = this.Popup && id = 30003
+            return this.PeerType
+        if element = this.Child && id = 30003
+            return 50020
+        return super.Property(element, id, type)
+    }
+    static ControllerPeers(element) => [this.Popup]
+    static CaretElement(context, caret) {
+        this.HitCalls += 1
+        if this.MoveHit && this.HitCalls > 1
+            return this.Other
+        return this.NeverInput || this.HitChild ? this.Child : this.Element
+    }
+    static RawChild(walker, element, slot) => this.NeverInput ? this.Child : this.Element
+    static MsaaAnchor(context) {
+        caret := super.MsaaAnchor(context)
+        if caret && this.MoveCaret && this.ProxyCalls > 1
+            caret.X += 1
+        return caret
+    }
+}
+
+TestControllerPeers() {
+    api := ControllerPeersApi
+    api.Reset(2)
+    peers := api.ControllerPeers({})
+    Assert(peers.Length = 2 && peers[1].Index = 0 && peers[2].Index = 1, "typed ControllerFor array decoded with bounded indices")
+    Assert(api.Stub.References = 1, "ControllerFor array interface released")
+    for count in [0,9,-1] {
+        api.Reset(count)
+        AssertThrows(() => api.ControllerPeers({}), "invalid ControllerFor length rejected " count)
+        Assert(!api.Reads && api.Stub.References = 1, "invalid relation count never enumerates peers or leaks")
+    }
+}
+
+class ControllerPeersApi extends EacUia {
+    static Reset(count) {
+        this.SelectionCount := count, this.Reads := 0, this.Deadline := 0
+        this.Stub := UiaComStub("array", this)
+    }
+    static Out(object, slot, args*) {
+        if slot = 48
+            return this.Stub.Object()
+        this.Reads += 1
+        return {Index:args[2]}
+    }
+}
 
 TestRead() {
     api := UiaTestApi
@@ -66,11 +244,11 @@ TestRead() {
     api.Reset(), api.Ancestor := false
     Rejected("different root ancestor", "UIAWindowMismatch", true)
     api.Reset(), api.SelectionCount := 0
-    Rejected("missing selection", "UIAUnavailable", true)
+    Rejected("missing selection waits for a fresh snapshot", "TextChanged", true)
     api.Reset(), api.SelectionCount := 2
-    Rejected("multiple selections", "UIAUnavailable", true)
+    Rejected("multiple selections wait for a fresh snapshot", "TextChanged", true)
     api.Reset(), api.SelectionLength := 1
-    Rejected("noncollapsed selection", "UIAUnavailable", true)
+    Rejected("noncollapsed selection waits without reading text", "TextChanged", true)
     api.Reset(), api.DocumentReadOnly := true
     Rejected("readonly document", "UIAReadOnlyOrRange", true)
     api.Reset(), api.SelectionReadOnly := true
@@ -106,7 +284,7 @@ TestRead() {
     api.Reset(), api.CaretShift := 1
     Rejected("caret changes during read", "TextChanged")
     api.Reset(), api.VerifiedSelectionLength := 1
-    Rejected("selection becomes noncollapsed", "UIAUnavailable")
+    Rejected("selection becomes noncollapsed", "TextChanged")
     api.Reset(), api.ChangeTextCall := 3
     Rejected("left text changes during read", "TextChanged")
     api.Reset(), api.ChangeTextCall := 4
@@ -243,7 +421,7 @@ TestComboRead() {
     api.Reset(), api.Props[30003] := 50003, api.Props[30019] := true
     Rejected("password ComboBox", "UIAUnsafeField", true)
     api.Reset(), api.Props[30003] := 50003, api.SelectionLength := 1
-    Rejected("ComboBox selected text", "UIAUnavailable", true)
+    Rejected("ComboBox selected text", "TextChanged", true)
     api.Reset(), api.Props[30003] := 50003, api.SelectionReadOnly := true
     Rejected("ComboBox readonly text range", "UIAReadOnlyOrRange", true)
     api.Reset(), api.Props[30003] := 50003, api.FinalReadOnly := true
@@ -266,7 +444,7 @@ TestDocumentRead() {
         Rejected("Document " pair[1], pair[2], true)
     }
     api.Reset(), api.Props[30003] := 50030, api.SelectionLength := 1
-    Rejected("Document selected text", "UIAUnavailable", true)
+    Rejected("Document selected text", "TextChanged", true)
     api.Reset(), api.Props[30003] := 50030, api.NoAnchor := true
     Rejected("Document unknown caret rectangle", "UIACaretUnavailable")
     api.Reset(), api.Props[30003] := 50030, api.Props[30019] := true
@@ -379,7 +557,7 @@ TestFieldAnchor() {
     api.Reset(), api.NoAnchor := true, api.FieldRect := [10,20,200,25], api.Props[30003] := 50030
     Rejected("whole Document is not a field position fallback", "UIACaretUnavailable")
     api.Reset(), api.NoAnchor := true, api.FieldRect := [10,20,200,25], api.SelectionLength := 1
-    Rejected("field rectangle never bypasses selected text", "UIAUnavailable", true)
+    Rejected("field rectangle never bypasses selected text", "TextChanged", true)
     api.Reset(), api.NoAnchor := true, api.FieldRect := [10,20,200,25], api.Props[30022] := true
     Rejected("hidden editor never uses visible field fallback", "UIACaretUnavailable", true)
 }
@@ -406,7 +584,7 @@ TestAccessibilityProxy() {
     api.Reset(), api.Props[30022] := true
     Rejected("hidden proxy without visible native caret", "UIACaretUnavailable", true)
     api.Reset(), api.Props[30022] := true, api.ProxyAvailable := true, api.SelectionLength := 1
-    Rejected("hidden proxy selected text", "UIAUnavailable", true)
+    Rejected("hidden proxy selected text", "TextChanged", true)
     api.Reset(), api.Props[30022] := true, api.ProxyAvailable := true, api.SelectionReadOnly := true
     Rejected("hidden proxy readonly caret", "UIAReadOnlyOrRange", true)
     api.Reset(), api.Props[30022] := true, api.ProxyAvailable := true, api.ProxyGoneAfterRead := true

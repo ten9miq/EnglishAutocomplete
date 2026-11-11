@@ -118,6 +118,26 @@ App.Begin(), App.OnChar(0, "x")
 Assert(!App.CanIntercept(enter), "unselected Enter remains native without a queued Tab")
 App.OnChar(0, " ")
 Assert(!App.NavigationPending && !App.CanIntercept(tab), "word boundary clears deferred ownership")
+
+; A stale browser selection must not discard the first observed letters.
+; No candidate or navigation is available until a fully valid read succeeds.
+App.Begin(), App.Reset(), App.Readable := false, App.ReadFailure := "TextChanged"
+App.OnChar(0, "c"), App.Refresh()
+Assert(App.Tracker.Word == "c" && !App.Visible && !App.Target, "failed first read preserves only observed input")
+Assert(!App.CanIntercept(tab) && !App.CanIntercept(enter), "selection retry owns no candidate keys")
+App.OnChar(0, "onfi"), App.Before := "confi", App.Refresh()
+Assert(App.Tracker.Word == "confi" && !App.Visible, "typing during retry retains complete observed word")
+App.Readable := true, App.Refresh()
+Assert(App.Visible && App.Tracker.Word == "confi" && App.Target.Field.Before == "confi", "fresh safe snapshot restores complete preview")
+App.Begin(), App.Readable := false, App.ReadFailure := "TextChanged", App.Refresh()
+App.TextRetryAt -= 351
+App.Refresh()
+Assert(App.Tracker.Word == "" && !App.Visible && !App.Target, "persistent invalid selection expires after bounded retry")
+App.Begin(), App.Readable := false, App.ReadFailure := "UIAReadOnlyOrRange", App.Refresh()
+Assert(App.Tracker.Word == "" && !App.Visible, "known readonly field still resets immediately")
+App.Begin(), App.Readable := false, App.ReadFailure := "TextChanged", App.Refresh()
+App.ContextKey := "other", App.Readable := true, App.Refresh()
+Assert(App.Tracker.Word == "" && !App.Visible, "focus change cannot inherit retry text")
 FileAppend "PASS continuation_checks=" Checks " AHK=" A_AhkVersion "`n", "*"
 Cleanup()
 ExitApp 0
@@ -165,6 +185,7 @@ class ContinuationApp extends EacApplication {
     Begin() {
         this.ChangeDuringFocus := false
         this.ContextKey := "fixture", this.Focused := true, this.Readable := true
+        this.ReadFailure := "Field"
         this.Ime.Allowed := true
         this.Policy := {Enabled: true, Keys: true, ImeStyleKeys: true, Tab: false, Enter: false, Learning: false}
         this.Reset(), this.ReleaseEnter()
@@ -175,7 +196,7 @@ class ContinuationApp extends EacApplication {
     CurrentContext() => {Key: this.ContextKey, Hwnd: 1, Focus: 2}
     Snapshot() {
         if !this.Readable || !this.Focused || !this.Ime.Allowed {
-            this.SafetyReason := "Field"
+            this.SafetyReason := this.ReadFailure
             return false
         }
         context := this.CurrentContext()
