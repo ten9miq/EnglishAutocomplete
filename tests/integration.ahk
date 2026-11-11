@@ -10,7 +10,8 @@ if FileExist(ResultFile)
     FileDelete ResultFile
 Checks := 0
 CaseOnly := A_Args.Length && A_Args[1] == "--case-only"
-LearningOnly := A_Args.Length && A_Args[1] == "--learning-only"
+LearningBoundariesOnly := A_Args.Length && A_Args[1] == "--learning-boundaries-only"
+LearningOnly := LearningBoundariesOnly || (A_Args.Length && A_Args[1] == "--learning-only")
 PreviousWindow := WinExist("A")
 PreviousLayout := DllCall("GetKeyboardLayout", "UInt", 0, "Ptr")
 FixtureGui := false
@@ -51,8 +52,11 @@ Assert(context && context.Focus == TestEdit.Hwnd, "native focus context")
 Assert(App.Ime.GetState(context).Allowed, "ENG layout allowed (real OS query)")
 Assert(EacFieldGuard.Read(context), "native editable safety")
 if LearningOnly {
-    RunLearningTests()
-    Record("PASS learning_checks=" Checks " AHK=" A_AhkVersion)
+    if LearningBoundariesOnly
+        RunLearningBoundaryTests()
+    else
+        RunLearningTests()
+    Record("PASS " (LearningBoundariesOnly ? "learning_boundary_checks=" : "learning_checks=") Checks " AHK=" A_AhkVersion)
     Cleanup()
     ExitApp 0
 }
@@ -272,6 +276,7 @@ RunLearningTests() {
     TypeFixture("LearnFixtureWord ")
     Assert(App.User.Db.Query("SELECT uses FROM personal WHERE norm='learnfixtureword'")[1][1] == "2", "second real boundary increments once")
     Assert(HasLearnedCandidate("learnfixtureword"), "second verified use promotes unknown word")
+    RunLearningBoundaryTests()
     Prepare()
     TypeFixture("confi")
     Assert(!App.Visible && !App.Items.Length && !App.Target, "learning-only app never creates candidates")
@@ -312,6 +317,36 @@ RunLearningTests() {
     Prepare()
     TypeFixture("name@example.com ")
     Assert(App.User.Db.Query("SELECT count(*) FROM personal WHERE norm LIKE '%example%'")[1][1] == "0", "email remains excluded")
+}
+
+RunLearningBoundaryTests() {
+    global App, Settings
+    ; Force several real words to arrive before the 200ms learning debounce.
+    Settings.DebounceMs := 200
+    SetKeyDelay 0, 0
+    Prepare()
+    TypeFixture("Burstword Burstword ")
+    Sleep 100
+    Assert(App.User.Db.Query("SELECT uses FROM personal WHERE norm='burstword'")[1][1] == "2",
+        "real rapid input learns both occurrences before next-word suffix")
+    Prepare()
+    TypeFixture("alpha.beta,gamma-delta ")
+    Sleep 100
+    for word in ["alpha","beta","gamma","delta"]
+        Assert(App.User.Db.Query("SELECT uses FROM personal WHERE norm=?", [word])[1][1] == "1", "real punctuation boundary " word)
+    Prepare()
+    TypeFixture("getUserInfo HTTPServer ")
+    Sleep 100
+    for word in ["getuserinfo","get","user","info","httpserver","http","server"]
+        Assert(App.User.Db.Query("SELECT uses FROM personal WHERE norm=?", [word])[1][1] == "1", "real case boundary " word)
+    Prepare()
+    TypeFixture("Newlineword")
+    SendFixture "{Enter}"
+    Sleep 260
+    rows := App.User.Db.Query("SELECT uses FROM personal WHERE norm='newlineword'")
+    Assert(rows.Length && rows[1][1] == "1", "actual newline learns exactly once")
+    Settings.DebounceMs := 30
+    SetKeyDelay 10, -1
 }
 
 HasLearnedCandidate(norm) {

@@ -191,6 +191,7 @@ class ContinuationApp extends EacApplication {
         this.Reset(), this.ReleaseEnter()
         this.EnterActionArmed := false, this.Commits := 0, this.LastCommit := ""
         this.Tracker.Feed("confi", this.ContextKey), this.Before := "confi"
+        this.LearningTracker.Reset(), this.LearningTracker.Feed("confi", this.ContextKey)
         this.Refresh()
     }
     CurrentContext() => {Key: this.ContextKey, Hwnd: 1, Focus: 2}

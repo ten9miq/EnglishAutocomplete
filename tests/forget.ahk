@@ -111,6 +111,7 @@ class ForgetApp extends EacApplication {
     }
     Ready(prefix) {
         this.Tracker.Reset(), this.Tracker.Feed(prefix, "fixture")
+        this.LearningTracker.Reset(), this.LearningTracker.Feed(prefix, "fixture")
         this.Items := this.Engine.Search(prefix)
         this.Selected := 1, this.Navigating := true, this.Visible := true
         this.ShownGeneration := this.Tracker.Generation

@@ -7,6 +7,7 @@ class EacApplication {
     ShownGeneration := -1
     Target := false
     Pending := []
+    LearningTracker := EacLearningTracker()
     Items := []
     Fault := ""
     InputModifierMask := 0
@@ -120,6 +121,7 @@ class EacApplication {
         this.Visible := false
         this.Gui.Hide()
         this.Tracker.Reset()
+        this.LearningTracker.Reset()
         this.Pending := []
         this.Items := []
         this.Target := false
@@ -171,9 +173,10 @@ class EacApplication {
         this.Visible := false
         this.NavigationPending := continuing && context.Key = this.Target.Context.Key
         this.Gui.Hide()
-        for word in this.Tracker.Feed(text, context.Key) {
-            if this.Pending.Length < 8
-                this.Pending.Push({Word: word, ContextKey: context.Key, Tick: A_TickCount, Boundary: true})
+        this.Tracker.Feed(text, context.Key)
+        for observation in this.LearningTracker.Feed(text, context.Key) {
+            if this.Pending.Length < 128
+                this.Pending.Push(observation)
         }
         if this.Tracker.Word == text && RegExMatch(text, "^[A-Za-z]$")
             && EacUia.ExcelCellContext(context, "EXCEL7")
@@ -221,6 +224,7 @@ class EacApplication {
         if vk = 8 {
             this.LastInputAt := A_TickCount
             this.Tracker.Backspace()
+            this.LearningTracker.Reset(), this.Pending := []
             this.Hide()
             SetTimer this.RefreshCallback, -this.Config.DebounceMs
             return
@@ -228,8 +232,9 @@ class EacApplication {
         if vk = 13 || vk = 9 {
             context := EacFieldGuard.Context()
             if context {
-                for word in this.Tracker.Feed(" ", context.Key)
-                    this.Pending.Push({Word: word, ContextKey: context.Key, Tick: A_TickCount, Boundary: true})
+                this.Tracker.Feed(" ", context.Key)
+                ; Learning waits for OnChar's actual newline/tab. Never invent
+                ; a space that is absent from the input field (e.g. Submit).
                 this.Hide()
                 SetTimer this.RefreshCallback, -this.Config.DebounceMs
             }
@@ -379,13 +384,7 @@ class EacApplication {
                 this.Reset()
                 return
             }
-            for observation in this.Pending {
-                if snapshot.Policy.Learning && observation.ContextKey = snapshot.Context.Key
-                    && A_TickCount - observation.Tick < 500
-                    && EacFieldGuard.Matches(snapshot.Field, observation.Word, observation.Boundary)
-                    this.User.Observe(RTrim(observation.Word, ".,!?;:"))
-            }
-            this.Pending := []
+            this.FlushLearning(snapshot)
             if !snapshot.Policy.Enabled {
                 this.Hide()
                 this.Items := [], this.Target := false
@@ -401,6 +400,8 @@ class EacApplication {
                     return
                 }
                 this.Tracker.Word := prefix := actual
+                this.LearningTracker.Reset(), this.Pending := []
+                this.LearningTracker.Feed(actual, snapshot.Context.Key)
                 this.Tracker.Learned := false
                 this.ReconcileCount += 1
                 this.Tracker.Generation += 1
@@ -471,6 +472,47 @@ class EacApplication {
             if this.Config.Debug
                 try FileAppend FormatTime(, "yyyy-MM-dd HH:mm:ss") " runtime fault; no input text recorded`n", this.Config.DataDirectory "\status.log", "UTF-8"
         }
+    }
+
+    FlushLearning(snapshot) {
+        previousCritical := A_IsCritical
+        Critical "On"
+        try {
+            pending := this.Pending, this.Pending := []
+            epoch := this.LearningTracker.Epoch
+            generation := this.Tracker.Generation
+        } finally Critical previousCritical
+        retained := []
+        for observation in pending {
+            if !snapshot.Policy.Learning || observation.ContextKey != snapshot.Context.Key
+                continue
+            if generation != this.Tracker.Generation {
+                retained.Push(observation)
+                continue
+            }
+            if observation.HasOwnProp("Journal") {
+                state := this.LearningTracker.Verify(snapshot.Field, observation)
+                if state = "Ready"
+                    this.User.Observe(observation.Word)
+                else if state = "Wait"
+                    retained.Push(observation)
+            } else if A_TickCount - observation.Tick < 500
+                && EacFieldGuard.Matches(snapshot.Field, observation.Word, observation.Boundary)
+                this.User.Observe(RTrim(observation.Word, ".,!?;:"))
+        }
+        Critical "On"
+        try {
+            merged := []
+            for observation in retained {
+                if epoch = this.LearningTracker.Epoch && merged.Length < 128
+                    merged.Push(observation)
+            }
+            for observation in this.Pending {
+                if merged.Length < 128
+                    merged.Push(observation)
+            }
+            this.Pending := merged
+        } finally Critical previousCritical
     }
 
     CanIntercept(binding, *) {
@@ -795,8 +837,7 @@ class EacApplication {
             this.Tracker.Word := prefix suffix
             this.Tracker.Learned := true
             this.Tracker.Generation += 1
-            this.Pending.Push({Word: prefix suffix, ContextKey: snapshot.Context.Key,
-                Tick: A_TickCount, Boundary: false})
+            this.Pending.Push(this.LearningTracker.Complete(suffix, prefix suffix, snapshot.Context.Key))
             this.CommitCount += 1
         } finally {
             this.Sending := false

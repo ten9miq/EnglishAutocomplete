@@ -54,6 +54,7 @@ if (Test-Path (Join-Path $root 'tests/transfer.ahk')) { Invoke-Ahk (Join-Path $r
 if (Test-Path (Join-Path $root 'tests/it-dictionary.ahk')) { Invoke-Ahk (Join-Path $root 'tests/it-dictionary.ahk') }
 if (Test-Path (Join-Path $root 'tests/mouse-watch.ahk')) { Invoke-Ahk (Join-Path $root 'tests/mouse-watch.ahk') }
 if (Test-Path (Join-Path $root 'tests/continuation.ahk')) { Invoke-Ahk (Join-Path $root 'tests/continuation.ahk') }
+if (Test-Path (Join-Path $root 'tests/learning.ahk')) { Invoke-Ahk (Join-Path $root 'tests/learning.ahk') }
 if ($Integration) { Invoke-Ahk (Join-Path $root 'tests/integration.ahk') }
 elseif ($CaseOnly) { Invoke-Ahk -Script (Join-Path $root 'tests/integration.ahk') -ExtraArgs @('--case-only') }
 elseif ($LearningOnly) { Invoke-Ahk -Script (Join-Path $root 'tests/integration.ahk') -ExtraArgs @('--learning-only') }

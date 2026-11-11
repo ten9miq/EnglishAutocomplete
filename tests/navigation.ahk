@@ -170,6 +170,7 @@ class NavigationApp extends EacApplication {
             this.Ime.Allowed := true
         this.Tracker := EacInputTracker()
         this.Tracker.Feed("confi", "test")
+        this.LearningTracker.Reset(), this.LearningTracker.Feed("confi", "test")
         this.ShownGeneration := this.Tracker.Generation
         this.Pending := []
         this.Items := [1,2,3,4,5,6,7,8,9]
